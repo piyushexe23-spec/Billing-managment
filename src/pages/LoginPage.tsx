@@ -4,8 +4,22 @@ import { LoginForm } from "@/components/auth/LoginForm";
 import { Card, CardContent } from "@/components/ui/card";
 import { Database, Shield, Activity, Laptop } from "lucide-react";
 
-export const LoginPage: React.FC = () => {
+interface LoginPageProps {
+  onLoginSuccess?: (username: string) => void;
+}
+
+export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
+
+  const handleLogin = (user: string) => {
+    setCurrentUser(user);
+    if (onLoginSuccess) {
+      // Short delay so user can observe success confirmation if desired, or transition directly
+      setTimeout(() => {
+        onLoginSuccess(user);
+      }, 500);
+    }
+  };
 
   return (
     <div className="min-h-screen w-full flex flex-col justify-between bg-medical-slate-100/90 text-medical-slate-900 selection:bg-medical-navy-100">
@@ -53,7 +67,7 @@ export const LoginPage: React.FC = () => {
 
             {/* Form Content */}
             <CardContent className="p-8 pt-6">
-              <LoginForm onLoginSuccess={(user) => setCurrentUser(user)} />
+              <LoginForm onLoginSuccess={handleLogin} />
             </CardContent>
 
             {/* Card Bottom Feature Preview Info */}
@@ -107,3 +121,4 @@ export const LoginPage: React.FC = () => {
     </div>
   );
 };
+

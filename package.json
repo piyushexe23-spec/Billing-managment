@@ -6,8 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "node test-login-flow.mjs",
-    "preview": "vite preview"
+    "test": "node test-login-flow.mjs && node test-dashboard-flow.mjs",
+    "preview": "vite preview",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

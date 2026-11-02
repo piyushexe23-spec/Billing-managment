@@ -104,3 +104,4 @@ fn seed_default_admin(conn: &Connection) -> Result<()> {
 
     Ok(())
 }
+

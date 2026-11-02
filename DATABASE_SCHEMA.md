@@ -143,3 +143,4 @@ Invoice headers and patient billing ledger.
 | `payment_mode` | `TEXT` | `DEFAULT 'CASH'` | Payment method (CASH, CARD, UPI) |
 | `created_by` | `INTEGER` | `REFERENCES users(id)` | User who recorded the transaction |
 | `created_at` | `DATETIME` | `DEFAULT CURRENT_TIMESTAMP` | Billing timestamp |
+

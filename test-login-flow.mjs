@@ -88,3 +88,4 @@ function simulateAuth(username, password) {
 }
 
 console.log("\nALL 6 CORE UNIT / LOGIC TESTS PASSED SUCCESSFULLY!");
+

@@ -8,11 +8,25 @@ IM MEDICOS is engineered with a decoupled desktop architecture:
 graph TD
     subgraph Desktop["Windows Desktop Shell (Tauri 2)"]
         subgraph Frontend["Frontend Client (React + TypeScript)"]
-            UI["UI Design System (shadcn/ui + Tailwind)"]
-            AuthMod["Authentication Module (LoginForm)"]
-            Pages["Page Views (LoginPage)"]
-            State["Local Component State"]
-            Brand["Branding & Assets (Logo)"]
+            AppRoot["App Root (App.tsx)"]
+            AuthMod["Authentication (LoginPage / LoginForm)"]
+            AppShell["Desktop Shell (AppLayout.tsx)"]
+            DashPage["Dashboard View (DashboardPage.tsx)"]
+            
+            subgraph DashboardComponents["Dashboard Component Modules"]
+                SummaryCards["SummaryCardsGrid.tsx"]
+                SalesChart["SalesOverviewChart.tsx"]
+                TopMeds["TopSellingMedicines.tsx"]
+                LowStock["LowStockMedicines.tsx"]
+                RecentBills["RecentBillsTable.tsx"]
+                DevBanner["DevDataBanner.tsx"]
+            end
+
+            subgraph DataService["Service & Utility Layer"]
+                DashService["dashboardService.ts"]
+                Formatters["formatters.ts (INR / Numbers)"]
+                Types["types/dashboard.ts & auth.ts"]
+            end
         end
 
         subgraph IPC["Tauri IPC Channel"]
@@ -31,11 +45,21 @@ graph TD
         end
     end
 
-    Pages --> AuthMod
-    AuthMod --> UI
-    Pages --> Brand
-    AuthMod --> State
-    Frontend -.->|IPC Commands| InvokeBridge
+    AppRoot -->|unauthenticated| AuthMod
+    AppRoot -->|authenticated| AppShell
+    AppShell --> DashPage
+    DashPage --> SummaryCards
+    DashPage --> SalesChart
+    DashPage --> TopMeds
+    DashPage --> LowStock
+    DashPage --> RecentBills
+    DashPage --> DevBanner
+
+    DashPage --> DashService
+    DashService --> Formatters
+    DashService --> Types
+
+    Frontend -.->|Future IPC Commands| InvokeBridge
     InvokeBridge -.->|tauri::invoke| TauriCore
     TauriCore --> Lib
     Lib --> DBModule
@@ -49,60 +73,76 @@ graph TD
 
 ```mermaid
 graph LR
-    subgraph Core["Entry Point"]
-        IndexHTML["index.html"] --> Main["src/main.tsx"]
-        Main --> App["src/App.tsx"]
-        App --> LoginPage["src/pages/LoginPage.tsx"]
+    subgraph Shell["Application Shell"]
+        App["src/App.tsx"]
+        AppLayout["src/components/layout/AppLayout.tsx"]
+        Logo["src/components/brand/logo.tsx"]
     end
 
-    subgraph Views["Screen Views"]
-        LoginPage --> LoginForm["src/components/auth/LoginForm.tsx"]
-        LoginPage --> Logo["src/components/brand/logo.tsx"]
-        LoginPage --> Card["src/components/ui/card.tsx"]
+    subgraph Pages["Screens"]
+        LoginPage["src/pages/LoginPage.tsx"]
+        DashboardPage["src/pages/DashboardPage.tsx"]
     end
 
-    subgraph Primitives["Reusable Design System Components"]
-        LoginForm --> Button["src/components/ui/button.tsx"]
-        LoginForm --> Input["src/components/ui/input.tsx"]
-        LoginForm --> Label["src/components/ui/label.tsx"]
-        LoginForm --> Checkbox["src/components/ui/checkbox.tsx"]
-        LoginForm --> Alert["src/components/ui/alert.tsx"]
-        
-        Button --> Utils["src/lib/utils.ts"]
-        Input --> Utils
-        Label --> Utils
-        Card --> Utils
-        Checkbox --> Utils
-        Alert --> Utils
-        Logo --> Utils
+    subgraph DashboardModules["Dashboard Modules"]
+        SummaryCards["SummaryCardsGrid"]
+        SalesChart["SalesOverviewChart"]
+        TopMeds["TopSellingMedicines"]
+        LowStock["LowStockMedicines"]
+        RecentBills["RecentBillsTable"]
+        DevBanner["DevDataBanner"]
     end
 
-    subgraph Types["Type Contracts"]
-        LoginForm --> AuthTypes["src/types/auth.ts"]
+    subgraph Services["Services & Utils"]
+        Service["src/services/dashboardService.ts"]
+        Formatters["src/lib/formatters.ts"]
+        Utils["src/lib/utils.ts"]
     end
+
+    App --> LoginPage
+    App --> AppLayout
+    AppLayout --> Logo
+    AppLayout --> DashboardPage
+
+    DashboardPage --> SummaryCards
+    DashboardPage --> SalesChart
+    DashboardPage --> TopMeds
+    DashboardPage --> LowStock
+    DashboardPage --> RecentBills
+    DashboardPage --> DevBanner
+
+    DashboardPage --> Service
+    SummaryCards --> Formatters
+    SalesChart --> Formatters
+    TopMeds --> Formatters
+    RecentBills --> Formatters
+    
+    SummaryCards --> Utils
+    SalesChart --> Utils
+    LowStock --> Utils
 ```
 
 ---
 
 ## 3. Knowledge Graph (Graphify Engine)
 
-Official **Graphify** has been installed and generated interactive AST mappings of the codebase:
+Official **Graphify** mapped AST relationships across the entire workspace:
 
-- **Interactive Knowledge Graph:** `graphify-out/graph.html` (visualizes code modules, dependencies, and cross-file relationships).
-- **Graph Structural Manifest:** `graphify-out/graph.json` (node-and-edge graph model for semantic traversal).
-- **Architecture Summary:** `graphify-out/GRAPH_REPORT.md` (clustering and community breakdown).
+- **Interactive Visual Graph:** `graphify-out/graph.html` (interactive nodes, links, and community clusters).
+- **Graph Structural Manifest:** `graphify-out/graph.json` (node-and-edge model).
+- **Architecture Summary:** `graphify-out/GRAPH_REPORT.md` (clustering breakdown).
 
 ### Extracted Code Graph Summary
-- **Nodes mapped:** 154 AST symbols and code artifacts
-- **Edges mapped:** 229 cross-symbol calls, imports, and definitions
-- **Communities detected:** 16 functional clusters
+- **Nodes mapped:** 237 AST symbols and code artifacts
+- **Edges mapped:** 441 cross-symbol calls, imports, and definitions
+- **Communities detected:** 19 functional clusters
 
 ---
 
-## 4. Frontend Design System Guidelines
+## 4. Design System Compliance
 
-- **Primary Tone:** Deep Medical Navy (`#0d2545` / `#133560`) — conveys trustworthiness, clinical precision, and commercial Windows software quality.
-- **Accent Tone:** Subtle Medical Emerald (`#059669` / `#10b981`) — represents health, active status, and validation confirmation.
+- **Primary Tone:** Deep Medical Navy (`#091a32` to `#133560`) — professional clinical anchor.
+- **Accent Tone:** Subtle Medical Emerald (`#059669` / `#10b981`) — represents positive trends, active status, and validation.
+- **Alert Tones:** Amber (`#b45309`) and Red (`#dc2626`) — reserved exclusively for inventory depletion warnings.
 - **Surfaces:** Clean White (`#ffffff`) and cool slate tint (`#f8fafc` / `#f1f5f9`).
-- **Borders & Dividers:** High-precision subtle borders (`#e2e8f0`).
-- **Typography:** Segoe UI / Inter modern sans-serif typography with strict visual hierarchy.
+- **Currency Standard:** Indian Rupee formatting (`₹`) with Lakhs/Crores grouping.
