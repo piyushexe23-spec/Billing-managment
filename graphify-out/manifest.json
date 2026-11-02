@@ -1,8 +1,8 @@
 {
   "package.json": {
-    "mtime": 1793633943.7915118,
-    "seen": 1793634610.2516062,
-    "ast_hash": "ec7882bed031fda545d478c664ee76ee",
+    "mtime": 1793634979.5791523,
+    "seen": 1793635004.9873533,
+    "ast_hash": "545c0f7ad33642157fa2d188baabcc40",
     "semantic_hash": ""
   },
   "postcss.config.js": {
@@ -144,15 +144,45 @@
     "semantic_hash": ""
   },
   "vite.config.ts": {
-    "mtime": 1793633978.9770515,
-    "seen": 1793634610.2516062,
-    "ast_hash": "5360c6ba19863c245aa73329379e0560",
+    "mtime": 1793634853.921458,
+    "seen": 1793635004.9873533,
+    "ast_hash": "755d1cb70074a031c850c239fbde07f5",
     "semantic_hash": ""
   },
   "index.html": {
     "mtime": 1793634031.832153,
     "seen": 1793634610.2516062,
     "ast_hash": "17ac0cf5e7d9a9100007163bcc0d6621",
+    "semantic_hash": ""
+  },
+  "test-login-flow.mjs": {
+    "mtime": 1793634964.2970045,
+    "seen": 1793635004.9873533,
+    "ast_hash": "22758f5844a4ce23fde173cac231cff3",
+    "semantic_hash": ""
+  },
+  "ARCHITECTURE.md": {
+    "mtime": 1793634641.9971728,
+    "seen": 1793635004.9873533,
+    "ast_hash": "ab0db36dcd9c1e3c28543e974f7c429b",
+    "semantic_hash": ""
+  },
+  "DATABASE_SCHEMA.md": {
+    "mtime": 1793634660.4546924,
+    "seen": 1793635004.9873533,
+    "ast_hash": "e20c01753341f87c23a03bba2c051a07",
+    "semantic_hash": ""
+  },
+  "DEVELOPMENT_PROGRESS.md": {
+    "mtime": 1793634670.0627234,
+    "seen": 1793635004.9873533,
+    "ast_hash": "c6000f595b7188b25b5322c3bfbcbba3",
+    "semantic_hash": ""
+  },
+  "PROJECT_PLAN.md": {
+    "mtime": 1793634629.095266,
+    "seen": 1793635004.9873533,
+    "ast_hash": "b18861738ab41008317c1826f6a658ba",
     "semantic_hash": ""
   },
   "package-lock.json": {

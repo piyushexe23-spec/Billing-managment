@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "node test-login-flow.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
