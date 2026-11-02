@@ -64,3 +64,4 @@ export interface DashboardOverview {
     lowStockMedicines: SummaryCardData;
   };
 }
+

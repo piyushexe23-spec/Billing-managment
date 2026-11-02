@@ -178,3 +178,4 @@ function formatCurrencyINR(amount) {
 }
 
 console.log("\nALL 8 DASHBOARD INTEGRATION TESTS PASSED SUCCESSFULLY!\n");
+

@@ -19,3 +19,4 @@ export function formatNumberIndian(count: number): string {
   if (isNaN(count)) return "0";
   return new Intl.NumberFormat("en-IN").format(count);
 }
+

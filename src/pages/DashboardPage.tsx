@@ -88,7 +88,7 @@ export const DashboardPage: React.FC = () => {
   ];
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1600px] mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1600px] w-full min-w-0 mx-auto">
       {/* Sample Data Disclaimer Banner */}
       {overview.isDevSampleData && <DevDataBanner />}
 

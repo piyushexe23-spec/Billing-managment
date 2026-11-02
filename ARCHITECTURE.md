@@ -10,6 +10,7 @@ graph TD
         subgraph Frontend["Frontend Client (React + TypeScript)"]
             AppRoot["App Root (App.tsx)"]
             AuthMod["Authentication (LoginPage / LoginForm)"]
+            AuthService["Cryptographic Session Service (authService.ts)"]
             AppShell["Desktop Shell (AppLayout.tsx)"]
             DashPage["Dashboard View (DashboardPage.tsx)"]
             
@@ -42,9 +43,12 @@ graph TD
 
         subgraph Storage["Embedded Local Storage"]
             DBFile[("im_medicos.db (SQLite)")]
+            SessionVault[("Workstation Session Vault (HMAC-SHA256)")]
         end
     end
 
+    AppRoot -->|restores session| AuthService
+    AuthService --> SessionVault
     AppRoot -->|unauthenticated| AuthMod
     AppRoot -->|authenticated| AppShell
     AppShell --> DashPage
@@ -69,57 +73,27 @@ graph TD
 
 ---
 
-## 2. Component Dependency Graph
+## 2. Desktop Viewport & Scrolling Architecture
 
 ```mermaid
-graph LR
-    subgraph Shell["Application Shell"]
-        App["src/App.tsx"]
-        AppLayout["src/components/layout/AppLayout.tsx"]
-        Logo["src/components/brand/logo.tsx"]
+graph TD
+    subgraph Viewport["Full Viewport Shell (h-screen max-h-screen w-screen overflow-hidden)"]
+        subgraph SidebarCol["Stationary Sidebar (h-full flex-shrink-0)"]
+            BrandHeader["Brand Header (h-16 flex-shrink-0)"]
+            NavList["Nav Items (flex-1 overflow-y-auto)"]
+            UserArea["User Badge & Logout (h-auto flex-shrink-0)"]
+        end
+        
+        subgraph MainCol["Main Area (flex-1 flex flex-col h-full min-w-0 min-h-0 overflow-hidden)"]
+            StickyNav["Sticky Top Navbar (h-16 flex-shrink-0 z-20)"]
+            NoticeBanner["Notice Banner (flex-shrink-0)"]
+            ScrollContainer["Primary Scroll Container (main flex-1 min-h-0 overflow-y-auto)"]
+            StickyFooter["Sticky Desktop Footer (h-9 flex-shrink-0 z-10)"]
+        end
     end
 
-    subgraph Pages["Screens"]
-        LoginPage["src/pages/LoginPage.tsx"]
-        DashboardPage["src/pages/DashboardPage.tsx"]
-    end
-
-    subgraph DashboardModules["Dashboard Modules"]
-        SummaryCards["SummaryCardsGrid"]
-        SalesChart["SalesOverviewChart"]
-        TopMeds["TopSellingMedicines"]
-        LowStock["LowStockMedicines"]
-        RecentBills["RecentBillsTable"]
-        DevBanner["DevDataBanner"]
-    end
-
-    subgraph Services["Services & Utils"]
-        Service["src/services/dashboardService.ts"]
-        Formatters["src/lib/formatters.ts"]
-        Utils["src/lib/utils.ts"]
-    end
-
-    App --> LoginPage
-    App --> AppLayout
-    AppLayout --> Logo
-    AppLayout --> DashboardPage
-
-    DashboardPage --> SummaryCards
-    DashboardPage --> SalesChart
-    DashboardPage --> TopMeds
-    DashboardPage --> LowStock
-    DashboardPage --> RecentBills
-    DashboardPage --> DevBanner
-
-    DashboardPage --> Service
-    SummaryCards --> Formatters
-    SalesChart --> Formatters
-    TopMeds --> Formatters
-    RecentBills --> Formatters
-    
-    SummaryCards --> Utils
-    SalesChart --> Utils
-    LowStock --> Utils
+    BrandHeader --- NavList --- UserArea
+    StickyNav --- NoticeBanner --- ScrollContainer --- StickyFooter
 ```
 
 ---
@@ -133,16 +107,15 @@ Official **Graphify** mapped AST relationships across the entire workspace:
 - **Architecture Summary:** `graphify-out/GRAPH_REPORT.md` (clustering breakdown).
 
 ### Extracted Code Graph Summary
-- **Nodes mapped:** 237 AST symbols and code artifacts
-- **Edges mapped:** 441 cross-symbol calls, imports, and definitions
-- **Communities detected:** 19 functional clusters
+- **Nodes mapped:** 252 AST symbols and code artifacts
+- **Edges mapped:** 461 cross-symbol calls, imports, and definitions
+- **Communities detected:** 18 functional clusters
 
 ---
 
-## 4. Design System Compliance
+## 4. Cryptographic Session Security Specification
 
-- **Primary Tone:** Deep Medical Navy (`#091a32` to `#133560`) — professional clinical anchor.
-- **Accent Tone:** Subtle Medical Emerald (`#059669` / `#10b981`) — represents positive trends, active status, and validation.
-- **Alert Tones:** Amber (`#b45309`) and Red (`#dc2626`) — reserved exclusively for inventory depletion warnings.
-- **Surfaces:** Clean White (`#ffffff`) and cool slate tint (`#f8fafc` / `#f1f5f9`).
-- **Currency Standard:** Indian Rupee formatting (`₹`) with Lakhs/Crores grouping.
+- **Zero Plain-Text Credentials:** Passwords are never serialized into persistent client storage.
+- **HMAC-SHA256 Token Signing:** Every session ticket is signed via the native Web Crypto API (`crypto.subtle`) using a local workstation key.
+- **Tamper Protection:** Any out-of-band manipulation of `username`, `role`, or `expiresAt` in client storage invalidates the cryptographic signature, triggering an immediate session purge.
+- **No Login Flash:** Application initialization displays an integrated security loading splash while asynchronous session restoration occurs.

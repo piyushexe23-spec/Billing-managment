@@ -5,24 +5,33 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Database, Shield, Activity, Laptop } from "lucide-react";
 
 interface LoginPageProps {
-  onLoginSuccess?: (username: string) => void;
+  onLoginSuccess?: (user: {
+    username: string;
+    role: string;
+    displayName: string;
+    rememberMe: boolean;
+  }) => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
 
-  const handleLogin = (user: string) => {
-    setCurrentUser(user);
+  const handleLogin = (user: {
+    username: string;
+    role: string;
+    displayName: string;
+    rememberMe: boolean;
+  }) => {
+    setCurrentUser(user.username);
     if (onLoginSuccess) {
-      // Short delay so user can observe success confirmation if desired, or transition directly
       setTimeout(() => {
         onLoginSuccess(user);
-      }, 500);
+      }, 400);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col justify-between bg-medical-slate-100/90 text-medical-slate-900 selection:bg-medical-navy-100">
+    <div className="h-screen w-screen overflow-y-auto flex flex-col justify-between bg-medical-slate-100/90 text-medical-slate-900 selection:bg-medical-navy-100">
       {/* Top Application Header / Status Bar */}
       <header className="h-12 border-b border-medical-slate-200 bg-white/80 backdrop-blur-sm px-6 flex items-center justify-between select-none">
         <div className="flex items-center gap-3">

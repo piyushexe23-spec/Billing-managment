@@ -4,6 +4,7 @@
 - [x] Strict screen-by-screen progression enforced.
 - [x] Login screen completed & verified in Command 01.
 - [x] Main Application Layout & Dashboard completed & verified in Command 02.
+- [x] Master Bug Fix (Layout, Sidebar, Sticky Navbar, Session Persistence, Independent Scrolling) completed & verified.
 - [x] Navigation to New Bill, Medicines, Customers, Reports, Store Details, and Backup & Restore disabled until subsequent approvals.
 
 ---
@@ -14,18 +15,17 @@
 | :--- | :--- | :--- | :--- |
 | **Command 01 (Task 1-5)** | Project Foundation & Login Screen (Tauri 2, React, TypeScript, Vite, Tailwind CSS, shadcn/ui, Lucide, Rust + SQLite foundation, Login UI & Validation) | **COMPLETED** | Verified clean modular structure; dev login flow tested and working (`admin` / `admin123`). |
 | **Command 02 - Layout** | Main Desktop Application Layout (`AppLayout.tsx`) with collapsible sidebar, desktop header, user profile badge, offline SQLite status, and 9-item navigation list | **COMPLETED** | Fully responsive; non-implemented routes display clear, respectful deferred notices without breaking. |
-| **Command 02 - Dashboard (A)** | 6 Executive Summary Cards (Today's Sales, Today's Profit, Today's Bills, Month Sales, Total Medicines, Low Stock Medicines) | **COMPLETED** | Rendered with Indian Rupee (₹) formatting, trend labels, and medical color accents. |
-| **Command 02 - Dashboard (B)** | Interactive Sales Overview Chart with range selectors (7 Days, 30 Days, 12 Months) and interactive tooltips | **COMPLETED** | Interactive SVG line chart with gradient under-fill, axes, hover crosshairs, and ₹ tooltip values. |
-| **Command 02 - Dashboard (C)** | Top 5 Selling Medicines ranked by quantity sold | **COMPLETED** | Displays brand name, generic formula, quantity sold, total revenue in ₹, and relative performance bar. |
-| **Command 02 - Dashboard (D)** | Low Stock Medicines alerts with critical/reorder badges & empty-state fallback | **COMPLETED** | Displays items at/below threshold. Includes interactive empty-state test toggle. |
-| **Command 02 - Dashboard (E)** | Recent Bills ledger table (5 latest transactions) | **COMPLETED** | Displays invoice number, customer name, date/time, payment mode badge (CASH/UPI/CARD), and total ₹ amount. |
-| **Command 02 - Services** | Clean TypeScript service layer (`dashboardService.ts`, `formatters.ts`) | **COMPLETED** | Strictly decoupled UI from data; sample dev data labeled with explicit non-seeding disclaimer. |
-| **Command 02 - Testing** | Automated integration tests (`test-dashboard-flow.mjs`) & build verification | **COMPLETED** | `npm test` passed 14/14 tests; TypeScript passed 0 errors; Vite build passed 0 errors. |
-| **Command 02 - Knowledge Graph** | Graphify AST extraction & knowledge graph update | **COMPLETED** | Code graph updated to 237 nodes, 441 edges, 19 communities. |
+| **Command 02 - Dashboard (A-E)** | 6 Executive Summary Cards, Interactive SVG Chart (7d/30d/12m), Top 5 Medicines, Low Stock Alerts, Recent Bills table | **COMPLETED** | Rendered with Indian Rupee (₹) formatting, trend labels, and medical color accents. |
+| **MASTER BUG FIX - Layout** | Full-viewport desktop shell (`h-screen max-h-screen w-screen overflow-hidden`), eliminated document body scrolling, enforced primary vertical scroll strictly on `<main className="flex-1 min-h-0 overflow-y-auto">` | **COMPLETED** | Viewport strictly bounded; zero body scroll; zero horizontal scroll across all 6 resolutions. |
+| **MASTER BUG FIX - Sidebar** | Unify desktop sidebar state (`isSidebarCollapsed`), 16x toggle consistency, stationary desktop sidebar, isolated mobile drawer (`isMobileSidebarOpen`), backdrop overlay & Escape key handler | **COMPLETED** | Verified repeated desktop toggle without drift; mobile drawer closes on backdrop, Escape, and nav select. |
+| **MASTER BUG FIX - Navbar** | Decoupled sticky top navbar outside `<main>` scroll container (`flex-shrink-0 h-16 z-20`) so it never scrolls away or overlaps content | **COMPLETED** | Verified stationary navbar during rapid page scrolling; responsive drawer trigger and desktop toggle. |
+| **MASTER BUG FIX - Session** | Cryptographic session persistence via `authService.ts` using Web Crypto HMAC-SHA256, zero plaintext passwords, tamper-proof, auto-expiration, loading screen on restore, purge on Logout | **COMPLETED** | Refresh retains session; closing/reopening retains session; Logout purges session; refresh after Logout shows Login. |
+| **MASTER BUG FIX - Testing** | Automated integration tests expanded to 22 tests (`npm test`) across Login, Dashboard, and Master Bug Fix suites | **COMPLETED** | 22/22 tests passed; TypeScript compiler 0 errors; Vite production build 0 errors. |
+| **MASTER BUG FIX - Graph** | Graphify knowledge graph re-extraction | **COMPLETED** | Code graph updated to 252 nodes, 461 edges, 18 communities. |
 
 ---
 
 ## Current Active Screen State
 - **Active Screens:** `LoginPage` (`src/pages/LoginPage.tsx`) ⇄ `DashboardPage` (`src/pages/DashboardPage.tsx`)
-- **Navigation Flow:** Logging in as `admin` opens `DashboardPage`; clicking "Log Out" in sidebar returns cleanly to `LoginPage`.
-- **Next Screen:** None (waiting for user review & explicit approval for Command 03).
+- **Navigation Flow:** Logging in as `admin` securely signs and persists session ticket, landing on `DashboardPage`; page refresh or window reload maintains active session; clicking "Log Out" purges session and returns to `LoginPage`.
+- **Next Screen:** None (waiting for user review & explicit approval for subsequent commands).

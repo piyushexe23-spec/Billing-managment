@@ -8,7 +8,12 @@ import { Alert } from "@/components/ui/alert";
 import { LoginCredentials } from "@/types/auth";
 
 interface LoginFormProps {
-  onLoginSuccess?: (username: string) => void;
+  onLoginSuccess?: (user: {
+    username: string;
+    role: string;
+    displayName: string;
+    rememberMe: boolean;
+  }) => void;
 }
 
 export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
@@ -66,7 +71,12 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLoginSuccess }) => {
           `Welcome, ${credentials.username}! Test login successful. (Phase 1 development authentication verified; waiting for next feature authorization).`
         );
         if (onLoginSuccess) {
-          onLoginSuccess(credentials.username);
+          onLoginSuccess({
+            username: credentials.username.trim(),
+            role: "admin",
+            displayName: "System Administrator",
+            rememberMe: credentials.rememberMe,
+          });
         }
       } else {
         setAuthError(
