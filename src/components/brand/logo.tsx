@@ -6,6 +6,7 @@ interface LogoProps {
   size?: "sm" | "default" | "lg";
   showSubtitle?: boolean;
   variant?: "light" | "dark";
+  iconOnly?: boolean;
 }
 
 export const Logo: React.FC<LogoProps> = ({
@@ -13,6 +14,7 @@ export const Logo: React.FC<LogoProps> = ({
   size = "default",
   showSubtitle = true,
   variant = "light",
+  iconOnly = false,
 }) => {
   const iconSizes = {
     sm: "w-8 h-8",
@@ -76,47 +78,49 @@ export const Logo: React.FC<LogoProps> = ({
           />
         </svg>
 
-        {/* Status indicator dot positioned crisply inside border box to prevent clipping */}
+        {/* Status indicator dot positioned snugly inside corner so it never clips */}
         <div
           className={cn(
-            "absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-medical-green-500 ring-2",
+            "absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-medical-green-400 ring-1.5",
             isDark ? "ring-medical-navy-950" : "ring-white"
           )}
         />
       </div>
 
-      {/* Typography */}
-      <div className="flex flex-col text-left min-w-0">
-        <div
-          className={cn(
-            "font-extrabold tracking-tight leading-none whitespace-nowrap",
-            titleSizes[size],
-            isDark ? "text-white" : "text-medical-navy-900"
+      {/* Typography (omitted when iconOnly is true) */}
+      {!iconOnly && (
+        <div className="flex flex-col text-left min-w-0">
+          <div
+            className={cn(
+              "font-extrabold tracking-tight leading-none whitespace-nowrap",
+              titleSizes[size],
+              isDark ? "text-white" : "text-medical-navy-900"
+            )}
+          >
+            IM{" "}
+            <span
+              className={cn(
+                "font-black",
+                isDark ? "text-white" : "text-medical-navy-700"
+              )}
+            >
+              MEDICOS
+            </span>
+            <span className="text-medical-green-400 ml-0.5">.</span>
+          </div>
+          {showSubtitle && (
+            <span
+              className={cn(
+                "font-semibold uppercase mt-1 tracking-wider whitespace-nowrap",
+                subtitleSizes[size],
+                isDark ? "text-medical-slate-300" : "text-medical-slate-500"
+              )}
+            >
+              Medical Billing Software
+            </span>
           )}
-        >
-          IM{" "}
-          <span
-            className={cn(
-              "font-black",
-              isDark ? "text-white" : "text-medical-navy-700"
-            )}
-          >
-            MEDICOS
-          </span>
-          <span className="text-medical-green-400 ml-0.5">.</span>
         </div>
-        {showSubtitle && (
-          <span
-            className={cn(
-              "font-semibold uppercase mt-1 tracking-wider whitespace-nowrap",
-              subtitleSizes[size],
-              isDark ? "text-medical-slate-300" : "text-medical-slate-500"
-            )}
-          >
-            Medical Billing Software
-          </span>
-        )}
-      </div>
+      )}
     </div>
   );
 };

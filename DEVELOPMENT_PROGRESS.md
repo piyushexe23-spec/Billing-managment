@@ -5,7 +5,9 @@
 - [x] Login screen completed & verified in Command 01.
 - [x] Main Application Layout & Dashboard completed & verified in Command 02.
 - [x] Master Bug Fix (Layout, Sidebar, Sticky Navbar, Session Persistence, Independent Scrolling) completed & verified.
-- [x] Navigation to New Bill, Medicines, Customers, Reports, Store Details, and Backup & Restore disabled until subsequent approvals.
+- [x] Quick Logo Fix: High contrast text on dark sidebar & indicator dot clipping resolved.
+- [x] Command 03: Store Details Module completed & verified (Sections A-F, SQLite singleton, validation, logo upload/preview/removal).
+- [x] Navigation to New Bill, Medicines, Customers, Reports, and Backup & Restore remains disabled until subsequent approvals.
 
 ---
 
@@ -20,12 +22,13 @@
 | **MASTER BUG FIX - Sidebar** | Unify desktop sidebar state (`isSidebarCollapsed`), 16x toggle consistency, stationary desktop sidebar, isolated mobile drawer (`isMobileSidebarOpen`), backdrop overlay & Escape key handler | **COMPLETED** | Verified repeated desktop toggle without drift; mobile drawer closes on backdrop, Escape, and nav select. |
 | **MASTER BUG FIX - Navbar** | Decoupled sticky top navbar outside `<main>` scroll container (`flex-shrink-0 h-16 z-20`) so it never scrolls away or overlaps content | **COMPLETED** | Verified stationary navbar during rapid page scrolling; responsive drawer trigger and desktop toggle. |
 | **MASTER BUG FIX - Session** | Cryptographic session persistence via `authService.ts` using Web Crypto HMAC-SHA256, zero plaintext passwords, tamper-proof, auto-expiration, loading screen on restore, purge on Logout | **COMPLETED** | Refresh retains session; closing/reopening retains session; Logout purges session; refresh after Logout shows Login. |
-| **MASTER BUG FIX - Testing** | Automated integration tests expanded to 22 tests (`npm test`) across Login, Dashboard, and Master Bug Fix suites | **COMPLETED** | 22/22 tests passed; TypeScript compiler 0 errors; Vite production build 0 errors. |
-| **MASTER BUG FIX - Graph** | Graphify knowledge graph re-extraction | **COMPLETED** | Code graph updated to 252 nodes, 461 edges, 18 communities. |
+| **Sidebar Logo Quick Fix** | Added `variant="dark"` and `iconOnly` mode for sidebar emblem; adjusted indicator dot placement (`top-0.5 right-0.5`) to eliminate clipping and contrast issues | **COMPLETED** | High-contrast white typography on dark navy; emblem centers seamlessly in collapsed mode. |
+| **Command 03 - Store Details** | Full Store Details screen (`StoreDetailsPage.tsx`) covering Sections A-F (Pharmacy Info, Pharmacist Credentials, Invoicing Config, Bank/UPI, Inventory Alert Threshold, Logo Upload/Preview/Removal) | **COMPLETED** | SQLite singleton table (`id = 1`) with UPSERT queries, Tauri IPC commands (`get_store_details`, `save_store_details`, `save_store_logo`, `remove_store_logo`), strict validations (GSTIN, IFSC, email, phone, prefix, bounds), reset & save handlers. |
+| **Command 03 - Testing** | Automated integration tests expanded to 30 tests (`npm test`) across Login, Dashboard, Master Bug Fix, and Store Details suites | **COMPLETED** | 30/30 tests passed; TypeScript compiler 0 errors; Vite production build 0 errors. |
 
 ---
 
 ## Current Active Screen State
-- **Active Screens:** `LoginPage` (`src/pages/LoginPage.tsx`) ⇄ `DashboardPage` (`src/pages/DashboardPage.tsx`)
-- **Navigation Flow:** Logging in as `admin` securely signs and persists session ticket, landing on `DashboardPage`; page refresh or window reload maintains active session; clicking "Log Out" purges session and returns to `LoginPage`.
+- **Active Screens:** `LoginPage` (`src/pages/LoginPage.tsx`) ⇄ `DashboardPage` (`src/pages/DashboardPage.tsx`) ⇄ `StoreDetailsPage` (`src/pages/StoreDetailsPage.tsx`)
+- **Navigation Flow:** User logs in, lands on `DashboardPage`, can seamlessly switch to `StoreDetailsPage` via sidebar navigation and return to `DashboardPage`. Form state tracking shows "Unsaved Changes" or "Saved to SQLite". Reset discards modifications; Save persists to local database.
 - **Next Screen:** None (waiting for user review & explicit approval for subsequent commands).

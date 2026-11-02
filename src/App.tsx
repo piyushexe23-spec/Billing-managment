@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/DashboardPage";
-import { AppLayout } from "@/components/layout/AppLayout";
+import { StoreDetailsPage } from "@/pages/StoreDetailsPage";
+import { AppLayout, NavItemKey } from "@/components/layout/AppLayout";
 import { authService, AuthUser } from "@/services/authService";
 import { Loader2, ShieldCheck } from "lucide-react";
 
@@ -9,6 +10,7 @@ export const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [activeNav, setActiveNav] = useState<NavItemKey>("dashboard");
 
   // Restore authenticated session on startup/refresh
   useEffect(() => {
@@ -97,8 +99,13 @@ export const App: React.FC = () => {
   }
 
   return (
-    <AppLayout currentUser={currentUser.username} onLogout={handleLogout}>
-      <DashboardPage />
+    <AppLayout
+      currentUser={currentUser.username}
+      onLogout={handleLogout}
+      activeItem={activeNav}
+      onNavChange={setActiveNav}
+    >
+      {activeNav === "store_details" ? <StoreDetailsPage /> : <DashboardPage />}
     </AppLayout>
   );
 };

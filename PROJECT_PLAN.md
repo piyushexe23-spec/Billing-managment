@@ -40,9 +40,23 @@ All development strictly adheres to the rule:
 - [x] Recent Bills ledger (5 most recent transactions)
 - [x] Clean decoupled TypeScript service layer (`dashboardService.ts`) with development sample data
 - [x] Authentication integration: Login transitions into Dashboard; Logout returns cleanly to Login
-- [x] Updated automated test suite (`14 tests passed`) and Graphify Knowledge Graph (`237 nodes`)
+- [x] Master bug fix: locked viewport height, independent vertical scrolling, 16x toggle consistency, HMAC-SHA256 session persistence
+- [x] Sidebar branding fix: white text contrast in dark theme, centered emblem in collapsed mode, clipping elimination
 
-### Phase 3: Pharmacy Medicine Master & Inventory (Pending Approval)
+### Phase 3: Store Details Module (COMPLETED — Command 03)
+- [x] Complete Store Details screen (`StoreDetailsPage.tsx`) accessible from sidebar navigation
+- [x] Section A: Pharmacy Information (Name, Address, Phone, Email, GSTIN, Drug Licenses 1 & 2)
+- [x] Section B: Owner & Pharmacist Information (Owner Name, Pharmacist Name, Registration No.)
+- [x] Section C: Invoice Configuration (Prefix, Starting Bill #, GSTIN toggle, Words toggle, Footer Terms)
+- [x] Section D: Bank & UPI Details (Bank Name, Holder Name, Account No., IFSC, UPI ID with internal notice)
+- [x] Section E: Inventory Settings (Default Low Stock Alert Quantity)
+- [x] Section F: Pharmacy Logo (Upload, preview, replace, remove, PNG/JPG/JPEG under 2MB, local app data directory storage)
+- [x] SQLite singleton record enforcement (`CHECK (id = 1)`) with UPSERT queries in Rust backend
+- [x] Tauri IPC commands (`get_store_details`, `save_store_details`, `save_store_logo`, `remove_store_logo`)
+- [x] Form state management with "Unsaved Changes" indicator, reset confirmation, and validation errors
+- [x] Comprehensive test suite expanded to 30 tests (`npm test` 100% passing)
+
+### Phase 4: Pharmacy Medicine Master & Inventory (Pending Approval)
 - [ ] Medicine directory with batch numbers, expiry dates, HSN codes, MRP, purchase rates
 - [ ] Real-time stock calculation and expiry alerts
 - [ ] Rapid search by trade name and generic composition

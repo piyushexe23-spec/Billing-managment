@@ -88,6 +88,35 @@ erDiagram
 
 ## 3. Schema Definitions
 
+### `store_details` (Singleton Record: ID = 1)
+Central store configuration, compliance license numbers, invoice sequence counters, and branding assets.
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `INTEGER` | `PRIMARY KEY CHECK (id = 1)` | Singleton row enforcement |
+| `store_name` | `TEXT` | `NOT NULL` | Official Pharmacy / Store Name (Mandatory) |
+| `address` | `TEXT` | `NULLABLE` | Full multiline physical store address |
+| `phone` | `TEXT` | `NULLABLE` | Contact telephone / mobile |
+| `email` | `TEXT` | `NULLABLE` | Store email address |
+| `gstin` | `TEXT` | `NULLABLE` | 15-character Indian GSTIN identification |
+| `drug_license_1` | `TEXT` | `NULLABLE` | Form 20B drug license certificate |
+| `drug_license_2` | `TEXT` | `NULLABLE` | Form 21B drug license certificate |
+| `owner_name` | `TEXT` | `NULLABLE` | Proprietor / Owner legal name |
+| `pharmacist_name` | `TEXT` | `NULLABLE` | Registered in-charge pharmacist name |
+| `pharmacist_reg_no`| `TEXT` | `NULLABLE` | Pharmacy council registration number |
+| `bill_prefix` | `TEXT` | `NOT NULL DEFAULT 'IM'` | Invoice numbering prefix string |
+| `starting_bill_number`| `INTEGER` | `NOT NULL DEFAULT 1` | Invoice starting sequence number |
+| `show_gstin_on_invoice`| `INTEGER` | `NOT NULL DEFAULT 1` | Boolean toggle (1=true, 0=false) |
+| `show_amount_in_words`| `INTEGER` | `NOT NULL DEFAULT 1` | Boolean toggle (1=true, 0=false) |
+| `footer_terms` | `TEXT` | `NULLABLE` | Default invoice footer terms & return policy |
+| `bank_name` | `TEXT` | `NULLABLE` | Settlement bank name |
+| `account_holder_name`| `TEXT` | `NULLABLE` | Bank account holder name |
+| `account_number` | `TEXT` | `NULLABLE` | Bank account number |
+| `ifsc_code` | `TEXT` | `NULLABLE` | 11-character Indian Financial System Code |
+| `upi_id` | `TEXT` | `NULLABLE` | Virtual Payment Address (e.g. store@upi) |
+| `low_stock_threshold`| `INTEGER` | `NOT NULL DEFAULT 10` | Global inventory low-stock alert cutoff |
+| `logo_path` | `TEXT` | `NULLABLE` | Relative path to logo in local app directory |
+| `updated_at` | `DATETIME` | `DEFAULT CURRENT_TIMESTAMP` | Last updated timestamp |
+
 ### `users`
 Stores credentials and authorization levels for clinic staff.
 | Column | Type | Constraints | Description |

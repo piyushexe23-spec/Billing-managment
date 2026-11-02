@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "node test-login-flow.mjs && node test-dashboard-flow.mjs && node test-master-bugfix.mjs",
+    "test": "node test-login-flow.mjs && node test-dashboard-flow.mjs && node test-master-bugfix.mjs && node test-store-details.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },
