@@ -134,12 +134,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       >
         {/* Sidebar Brand Header */}
         <div className="h-16 flex-shrink-0 flex items-center justify-between px-4 border-b border-medical-navy-900/80">
-          <div className="flex items-center gap-2 overflow-hidden">
+          <div className="flex items-center gap-2 min-w-0">
             {!isSidebarCollapsed ? (
-              <Logo size="sm" showSubtitle={false} className="text-white" />
+              <Logo size="sm" showSubtitle={false} variant="dark" />
             ) : (
               <div className="mx-auto flex justify-center w-full">
-                <Logo size="sm" showSubtitle={false} className="text-white" />
+                <Logo size="sm" showSubtitle={false} variant="dark" />
               </div>
             )}
           </div>

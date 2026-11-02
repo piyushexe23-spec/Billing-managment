@@ -5,12 +5,14 @@ interface LogoProps {
   className?: string;
   size?: "sm" | "default" | "lg";
   showSubtitle?: boolean;
+  variant?: "light" | "dark";
 }
 
 export const Logo: React.FC<LogoProps> = ({
   className,
   size = "default",
   showSubtitle = true,
+  variant = "light",
 }) => {
   const iconSizes = {
     sm: "w-8 h-8",
@@ -30,12 +32,14 @@ export const Logo: React.FC<LogoProps> = ({
     lg: "text-xs tracking-[0.2em]",
   };
 
+  const isDark = variant === "dark";
+
   return (
     <div className={cn("inline-flex items-center gap-3 select-none", className)}>
       {/* Premium Medical Emblem */}
       <div
         className={cn(
-          "relative flex items-center justify-center rounded-xl bg-gradient-to-br from-medical-navy-800 to-medical-navy-950 text-white shadow-md border border-medical-navy-700/50",
+          "relative flex items-center justify-center rounded-xl bg-gradient-to-br from-medical-navy-800 to-medical-navy-950 text-white shadow-md border border-medical-navy-700/50 shrink-0",
           iconSizes[size]
         )}
       >
@@ -71,21 +75,42 @@ export const Logo: React.FC<LogoProps> = ({
             strokeLinejoin="round"
           />
         </svg>
-        {/* Subtle glowing pill badge indicator */}
-        <div className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-medical-green-500 ring-2 ring-white" />
+
+        {/* Status indicator dot positioned crisply inside border box to prevent clipping */}
+        <div
+          className={cn(
+            "absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-medical-green-500 ring-2",
+            isDark ? "ring-medical-navy-950" : "ring-white"
+          )}
+        />
       </div>
 
       {/* Typography */}
-      <div className="flex flex-col text-left">
-        <div className={cn("font-extrabold tracking-tight text-medical-navy-900 leading-none", titleSizes[size])}>
-          IM <span className="text-medical-navy-700 font-black">MEDICOS</span>
-          <span className="text-medical-green-600 ml-0.5">.</span>
+      <div className="flex flex-col text-left min-w-0">
+        <div
+          className={cn(
+            "font-extrabold tracking-tight leading-none whitespace-nowrap",
+            titleSizes[size],
+            isDark ? "text-white" : "text-medical-navy-900"
+          )}
+        >
+          IM{" "}
+          <span
+            className={cn(
+              "font-black",
+              isDark ? "text-white" : "text-medical-navy-700"
+            )}
+          >
+            MEDICOS
+          </span>
+          <span className="text-medical-green-400 ml-0.5">.</span>
         </div>
         {showSubtitle && (
           <span
             className={cn(
-              "font-semibold uppercase text-medical-slate-500 mt-1",
-              subtitleSizes[size]
+              "font-semibold uppercase mt-1 tracking-wider whitespace-nowrap",
+              subtitleSizes[size],
+              isDark ? "text-medical-slate-300" : "text-medical-slate-500"
             )}
           >
             Medical Billing Software
@@ -95,4 +120,3 @@ export const Logo: React.FC<LogoProps> = ({
     </div>
   );
 };
-
