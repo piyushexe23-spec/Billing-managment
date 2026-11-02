@@ -1,0 +1,204 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" width="1440" height="900" style="background:#f8fafc; font-family: Segoe UI, system-ui, sans-serif;">
+  <defs>
+    <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#133560" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#133560" stop-opacity="0.0"/>
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+
+  <!-- 1. SIDEBAR (w: 256px, h: 900px) -->
+  <rect x="0" y="0" width="256" height="900" fill="#051020"/>
+  
+  <!-- Sidebar Brand -->
+  <rect x="0" y="0" width="256" height="64" fill="#051020"/>
+  <line x1="0" y1="64" x2="256" y2="64" stroke="#0d2545" stroke-width="1"/>
+  <rect x="16" y="18" width="28" height="28" rx="6" fill="#133560" stroke="#1d477a" stroke-width="1"/>
+  <!-- Cross -->
+  <rect x="28" y="23" width="4" height="18" rx="1.5" fill="#4ade80"/>
+  <rect x="21" y="30" width="18" height="4" rx="1.5" fill="#4ade80"/>
+  <text x="54" y="36" fill="#ffffff" font-size="15" font-weight="800" letter-spacing="-0.5">IM <tspan fill="#b6c8de">MEDICOS</tspan><tspan fill="#10b981">.</tspan></text>
+
+  <!-- Sidebar Navigation Items -->
+  <!-- Active Dashboard -->
+  <rect x="12" y="80" width="232" height="38" rx="10" fill="#133560" stroke="#1d477a" stroke-width="1"/>
+  <rect x="240" y="86" width="4" height="26" rx="2" fill="#10b981"/>
+  <rect x="26" y="91" width="16" height="16" rx="3" fill="none" stroke="#4ade80" stroke-width="2"/>
+  <text x="54" y="104" fill="#ffffff" font-size="12" font-weight="700">Dashboard</text>
+
+  <!-- Inactive Nav items -->
+  <g font-size="12" fill="#94a3b8" font-weight="500">
+    <!-- New Bill -->
+    <text x="54" y="142">New Bill</text>
+    <rect x="194" y="130" width="34" height="16" rx="4" fill="#0d2545"/>
+    <text x="201" y="142" font-size="9" fill="#64748b" font-weight="700">SOON</text>
+
+    <!-- Bill History -->
+    <text x="54" y="178">Bill History</text>
+    <rect x="194" y="166" width="34" height="16" rx="4" fill="#0d2545"/>
+    <text x="201" y="178" font-size="9" fill="#64748b" font-weight="700">SOON</text>
+
+    <!-- Medicines -->
+    <text x="54" y="214">Medicines</text>
+    <rect x="194" y="202" width="34" height="16" rx="4" fill="#0d2545"/>
+    <text x="201" y="214" font-size="9" fill="#64748b" font-weight="700">SOON</text>
+
+    <!-- Customers -->
+    <text x="54" y="250">Customers</text>
+    <rect x="194" y="238" width="34" height="16" rx="4" fill="#0d2545"/>
+    <text x="201" y="250" font-size="9" fill="#64748b" font-weight="700">SOON</text>
+
+    <!-- Reports -->
+    <text x="54" y="286">Reports</text>
+    <rect x="194" y="274" width="34" height="16" rx="4" fill="#0d2545"/>
+    <text x="201" y="286" font-size="9" fill="#64748b" font-weight="700">SOON</text>
+
+    <!-- Store Details -->
+    <text x="54" y="322">Store Details</text>
+    <rect x="194" y="310" width="34" height="16" rx="4" fill="#0d2545"/>
+    <text x="201" y="322" font-size="9" fill="#64748b" font-weight="700">SOON</text>
+
+    <!-- Backup & Restore -->
+    <text x="54" y="358">Backup &amp; Restore</text>
+    <rect x="194" y="346" width="34" height="16" rx="4" fill="#0d2545"/>
+    <text x="201" y="358" font-size="9" fill="#64748b" font-weight="700">SOON</text>
+  </g>
+
+  <!-- Sidebar Footer: User & Logout -->
+  <line x1="0" y1="810" x2="256" y2="810" stroke="#0d2545" stroke-width="1"/>
+  <rect x="12" y="818" width="232" height="38" rx="8" fill="#091a32" stroke="#0d2545" stroke-width="1"/>
+  <circle cx="32" cy="837" r="13" fill="#133560"/>
+  <text x="26" y="841" fill="#4ade80" font-size="11" font-weight="700">AD</text>
+  <text x="52" y="834" fill="#ffffff" font-size="11" font-weight="700">admin</text>
+  <text x="52" y="847" fill="#64748b" font-size="9" font-family="monospace">Station #01 • Local</text>
+  
+  <rect x="12" y="862" width="232" height="30" rx="8" fill="#ef4444" fill-opacity="0.1" stroke="#ef4444" stroke-opacity="0.2" stroke-width="1"/>
+  <text x="110" y="881" fill="#fca5a5" font-size="11" font-weight="700">Log Out</text>
+
+  <!-- 2. STICKY TOP NAVBAR (x: 256, y: 0, w: 1184, h: 64) -->
+  <rect x="256" y="0" width="1184" height="64" fill="#ffffff" filter="url(#shadow)"/>
+  <line x1="256" y1="64" x2="1440" y2="64" stroke="#e2e8f0" stroke-width="1"/>
+  
+  <!-- Toggle button -->
+  <rect x="276" y="16" width="32" height="32" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+  <path d="M 289 26 L 295 32 L 289 38" fill="none" stroke="#475569" stroke-width="2" stroke-linecap="round"/>
+  
+  <text x="324" y="38" fill="#091a32" font-size="15" font-weight="700">Dashboard Overview</text>
+  <text x="490" y="38" fill="#94a3b8" font-size="12">•</text>
+  <text x="506" y="38" fill="#64748b" font-size="12">IM MEDICOS Billing &amp; Pharmacy System</text>
+
+  <!-- Status badges -->
+  <rect x="1190" y="20" width="140" height="24" rx="12" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
+  <circle cx="1204" cy="32" r="4" fill="#16a34a"/>
+  <text x="1215" y="36" fill="#166534" font-size="10" font-weight="700">Offline SQLite Ready</text>
+
+  <circle cx="1356" cy="32" r="16" fill="#0d2545"/>
+  <text x="1351" y="36" fill="#ffffff" font-size="12" font-weight="700">A</text>
+  <text x="1380" y="31" fill="#0f172a" font-size="11" font-weight="700">admin</text>
+  <text x="1380" y="42" fill="#64748b" font-size="9">Administrator</text>
+
+  <!-- 3. SCROLLABLE PAGE CONTENT (x: 256, y: 64, w: 1184, h: 800) -->
+  
+  <!-- Dev sample data banner -->
+  <rect x="280" y="84" width="1136" height="40" rx="10" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <circle cx="300" cy="104" r="7" fill="#3b82f6"/>
+  <text x="298" y="108" fill="#ffffff" font-size="10" font-weight="900">i</text>
+  <text x="318" y="102" fill="#1e3a8a" font-size="11" font-weight="700">Development Sample Data Active:</text>
+  <text x="510" y="102" fill="#1d4ed8" font-size="11">Metrics and charts currently display validated test models. Zero DB Seeding.</text>
+
+  <!-- Executive Header -->
+  <text x="280" y="152" fill="#091a32" font-size="18" font-weight="900" letter-spacing="-0.5">Pharmacy Executive Dashboard</text>
+  <text x="280" y="169" fill="#64748b" font-size="11">Real-time financial summaries, stock depletion, and daily prescription sales.</text>
+  <rect x="1330" y="138" width="86" height="28" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="1344" y="156" fill="#475569" font-size="11" font-weight="600">↻ Refresh</text>
+
+  <!-- 6 SUMMARY KPI CARDS -->
+  <!-- Card 1: Today's Sales -->
+  <rect x="280" y="186" width="176" height="96" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#shadow)"/>
+  <text x="294" y="206" fill="#64748b" font-size="10" font-weight="700">TODAY'S SALES</text>
+  <text x="294" y="238" fill="#091a32" font-size="20" font-weight="800">₹24,850</text>
+  <text x="294" y="264" fill="#16a34a" font-size="10" font-weight="600">↗ +14.2% vs yest</text>
+
+  <!-- Card 2: Today's Profit -->
+  <rect x="472" y="186" width="176" height="96" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#shadow)"/>
+  <text x="486" y="206" fill="#64748b" font-size="10" font-weight="700">TODAY'S PROFIT</text>
+  <text x="486" y="238" fill="#091a32" font-size="20" font-weight="800">₹6,420</text>
+  <text x="486" y="264" fill="#16a34a" font-size="10" font-weight="600">25.8% margin</text>
+
+  <!-- Card 3: Today's Bills -->
+  <rect x="664" y="186" width="176" height="96" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#shadow)"/>
+  <text x="678" y="206" fill="#64748b" font-size="10" font-weight="700">TODAY'S BILLS</text>
+  <text x="678" y="238" fill="#091a32" font-size="20" font-weight="800">42</text>
+  <text x="678" y="264" fill="#475569" font-size="10" font-weight="600">Avg ₹592 / bill</text>
+
+  <!-- Card 4: Month Sales -->
+  <rect x="856" y="186" width="176" height="96" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#shadow)"/>
+  <text x="870" y="206" fill="#64748b" font-size="10" font-weight="700">THIS MONTH'S SALES</text>
+  <text x="870" y="238" fill="#091a32" font-size="20" font-weight="800">₹5,84,300</text>
+  <text x="870" y="264" fill="#16a34a" font-size="10" font-weight="600">↗ +8.6% vs last mo</text>
+
+  <!-- Card 5: Total Medicines -->
+  <rect x="1048" y="186" width="176" height="96" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#shadow)"/>
+  <text x="1062" y="206" fill="#64748b" font-size="10" font-weight="700">TOTAL MEDICINES</text>
+  <text x="1062" y="238" fill="#091a32" font-size="20" font-weight="800">1,420</text>
+  <text x="1062" y="264" fill="#475569" font-size="10" font-weight="600">24 Categories</text>
+
+  <!-- Card 6: Low Stock -->
+  <rect x="1240" y="186" width="176" height="96" rx="12" fill="#ffffff" stroke="#fde68a" stroke-width="1" filter="url(#shadow)"/>
+  <text x="1254" y="206" fill="#b45309" font-size="10" font-weight="700">LOW STOCK ALERTS</text>
+  <text x="1254" y="238" fill="#b45309" font-size="20" font-weight="800">6</text>
+  <text x="1254" y="264" fill="#d97706" font-size="10" font-weight="700">Reorder required</text>
+
+  <!-- SALES OVERVIEW CHART CARD -->
+  <rect x="280" y="298" width="1136" height="230" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#shadow)"/>
+  <text x="300" y="324" fill="#091a32" font-size="14" font-weight="700">Sales Revenue Overview</text>
+  <text x="300" y="340" fill="#64748b" font-size="11">Range Revenue: <tspan fill="#091a32" font-weight="700">₹1,63,000</tspan> • Avg Daily: <tspan fill="#091a32" font-weight="600">₹23,285</tspan></text>
+  
+  <!-- Range selectors -->
+  <rect x="1200" y="310" width="200" height="26" rx="6" fill="#f1f5f9"/>
+  <rect x="1202" y="312" width="60" height="22" rx="4" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="1215" y="327" fill="#091a32" font-size="10" font-weight="700">7 Days</text>
+  <text x="1278" y="327" fill="#64748b" font-size="10">30 Days</text>
+  <text x="1342" y="327" fill="#64748b" font-size="10">12 Mos</text>
+
+  <!-- Chart plot -->
+  <path d="M 360 470 L 480 435 L 600 450 L 720 395 L 840 370 L 960 430 L 1080 405 L 1200 390 L 1320 380 L 1320 480 L 360 480 Z" fill="url(#chartGrad)"/>
+  <path d="M 360 470 L 480 435 L 600 450 L 720 395 L 840 370 L 960 430 L 1080 405 L 1200 390 L 1320 380" fill="none" stroke="#133560" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="1080" cy="405" r="5" fill="#10b981" stroke="#ffffff" stroke-width="2"/>
+  <!-- Tooltip -->
+  <rect x="1030" y="350" width="100" height="42" rx="6" fill="#051020"/>
+  <text x="1042" y="366" fill="#94a3b8" font-size="9">Today (02 Nov)</text>
+  <text x="1042" y="382" fill="#ffffff" font-size="11" font-weight="700">₹24,850</text>
+
+  <!-- LOWER GRID: Top Selling (left 50%) & Low Stock (right 50%) -->
+  <rect x="280" y="542" width="556" height="180" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#shadow)"/>
+  <text x="300" y="568" fill="#091a32" font-size="13" font-weight="700">Top Selling Medicines</text>
+  <text x="300" y="595" fill="#0f172a" font-size="11" font-weight="600">1. Dolo 650 Tablet</text>
+  <text x="760" y="595" fill="#091a32" font-size="11" font-weight="700">₹5,520</text>
+  <text x="300" y="625" fill="#0f172a" font-size="11" font-weight="600">2. Pan 40 Tablet</text>
+  <text x="760" y="625" fill="#091a32" font-size="11" font-weight="700">₹14,910</text>
+  <text x="300" y="655" fill="#0f172a" font-size="11" font-weight="600">3. Augmentin 625 Duo</text>
+  <text x="760" y="655" fill="#091a32" font-size="11" font-weight="700">₹19,600</text>
+  <text x="300" y="685" fill="#0f172a" font-size="11" font-weight="600">4. Azithral 500 Tablet</text>
+  <text x="760" y="685" fill="#091a32" font-size="11" font-weight="700">₹9,120</text>
+
+  <rect x="860" y="542" width="556" height="180" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#shadow)"/>
+  <text x="880" y="568" fill="#091a32" font-size="13" font-weight="700">Low Stock Inventory Alerts</text>
+  <rect x="1310" y="556" width="90" height="20" rx="10" fill="#fef3c7"/>
+  <text x="1324" y="570" fill="#92400e" font-size="10" font-weight="700">6 Depleted</text>
+  
+  <text x="880" y="605" fill="#0f172a" font-size="11" font-weight="600">Insulin Glargine 100IU</text>
+  <text x="1270" y="605" fill="#ef4444" font-size="11" font-weight="700">2 Vials</text>
+  <text x="880" y="635" fill="#0f172a" font-size="11" font-weight="600">Montek LC Tablet</text>
+  <text x="1270" y="635" fill="#ef4444" font-size="11" font-weight="700">4 Strips</text>
+  <text x="880" y="665" fill="#0f172a" font-size="11" font-weight="600">Telma 40mg Tablet</text>
+  <text x="1270" y="665" fill="#d97706" font-size="11" font-weight="700">5 Strips</text>
+
+  <!-- 4. STICKY BOTTOM FOOTER (x: 256, y: 864, w: 1184, h: 36) -->
+  <rect x="256" y="864" width="1184" height="36" fill="#ffffff"/>
+  <line x1="256" y1="864" x2="1440" y2="864" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="280" y="886" fill="#94a3b8" font-size="11">IM MEDICOS v0.1.0 • Windows Desktop Edition</text>
+  <text x="1330" y="886" fill="#94a3b8" font-size="11">Session: Active</text>
+</svg>

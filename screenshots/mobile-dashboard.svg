@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 844" width="390" height="844" style="background:#f8fafc; font-family: Segoe UI, system-ui, sans-serif;">
+  <defs>
+    <filter id="mShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.5" flood-opacity="0.06"/>
+    </filter>
+  </defs>
+
+  <!-- STICKY MOBILE TOP NAVBAR (h: 56px) -->
+  <rect x="0" y="0" width="390" height="56" fill="#ffffff" filter="url(#mShadow)"/>
+  <line x1="0" y1="56" x2="390" y2="56" stroke="#e2e8f0" stroke-width="1"/>
+  
+  <!-- Hamburger Button -->
+  <rect x="12" y="12" width="32" height="32" rx="6" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="20" y1="22" x2="36" y2="22" stroke="#091a32" stroke-width="2" stroke-linecap="round"/>
+  <line x1="20" y1="28" x2="36" y2="28" stroke="#091a32" stroke-width="2" stroke-linecap="round"/>
+  <line x1="20" y1="34" x2="36" y2="34" stroke="#091a32" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Brand Title -->
+  <text x="54" y="34" fill="#091a32" font-size="14" font-weight="800">Dashboard</text>
+  
+  <!-- Status Badge -->
+  <rect x="230" y="16" width="90" height="24" rx="12" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1"/>
+  <circle cx="242" cy="28" r="3.5" fill="#16a34a"/>
+  <text x="252" y="32" fill="#166534" font-size="10" font-weight="700">Ready</text>
+
+  <!-- User Avatar -->
+  <circle cx="355" cy="28" r="14" fill="#0d2545"/>
+  <text x="350" y="32" fill="#ffffff" font-size="11" font-weight="700">A</text>
+
+  <!-- SCROLLABLE CONTENT BODY (h: 752px) -->
+  
+  <!-- Dev Mode Banner -->
+  <rect x="12" y="68" width="366" height="34" rx="8" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1"/>
+  <text x="26" y="89" fill="#1e3a8a" font-size="10" font-weight="700">Dev Sample Data:</text>
+  <text x="120" y="89" fill="#1d4ed8" font-size="10">Validated mock metrics.</text>
+
+  <!-- Title & Refresh -->
+  <text x="14" y="124" fill="#091a32" font-size="16" font-weight="900">Executive Dashboard</text>
+  <rect x="300" y="110" width="76" height="24" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="312" y="126" fill="#475569" font-size="10" font-weight="600">↻ Refresh</text>
+
+  <!-- STACKED SUMMARY CARDS (Single Column on Mobile) -->
+  <!-- Card 1 -->
+  <rect x="12" y="142" width="366" height="64" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#mShadow)"/>
+  <text x="26" y="162" fill="#64748b" font-size="9" font-weight="700">TODAY'S SALES</text>
+  <text x="26" y="190" fill="#091a32" font-size="18" font-weight="800">₹24,850</text>
+  <text x="280" y="180" fill="#16a34a" font-size="10" font-weight="600">↗ +14.2%</text>
+
+  <!-- Card 2 -->
+  <rect x="12" y="214" width="366" height="64" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#mShadow)"/>
+  <text x="26" y="234" fill="#64748b" font-size="9" font-weight="700">TODAY'S PROFIT</text>
+  <text x="26" y="262" fill="#091a32" font-size="18" font-weight="800">₹6,420</text>
+  <text x="265" y="252" fill="#16a34a" font-size="10" font-weight="600">25.8% margin</text>
+
+  <!-- Card 3 -->
+  <rect x="12" y="286" width="366" height="64" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#mShadow)"/>
+  <text x="26" y="306" fill="#64748b" font-size="9" font-weight="700">TODAY'S INVOICES</text>
+  <text x="26" y="334" fill="#091a32" font-size="18" font-weight="800">42</text>
+  <text x="265" y="324" fill="#475569" font-size="10">Avg ₹592 / bill</text>
+
+  <!-- SALES CHART CARD (Responsive) -->
+  <rect x="12" y="358" width="366" height="190" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#mShadow)"/>
+  <text x="24" y="380" fill="#091a32" font-size="12" font-weight="700">Revenue Trend</text>
+  
+  <!-- Mini Range Selector -->
+  <rect x="210" y="368" width="156" height="22" rx="4" fill="#f1f5f9"/>
+  <rect x="212" y="370" width="48" height="18" rx="3" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
+  <text x="222" y="383" fill="#091a32" font-size="9" font-weight="700">7D</text>
+  <text x="272" y="383" fill="#64748b" font-size="9">30D</text>
+  <text x="320" y="383" fill="#64748b" font-size="9">12M</text>
+
+  <!-- Mini Chart Curve -->
+  <path d="M 30 500 L 80 470 L 130 480 L 180 440 L 230 420 L 280 460 L 340 430 L 340 520 L 30 520 Z" fill="#133560" fill-opacity="0.1"/>
+  <path d="M 30 500 L 80 470 L 130 480 L 180 440 L 230 420 L 280 460 L 340 430" fill="none" stroke="#133560" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="280" cy="460" r="4" fill="#10b981" stroke="#ffffff" stroke-width="1.5"/>
+
+  <!-- TOP MEDICINES (Mobile Card) -->
+  <rect x="12" y="556" width="366" height="140" rx="10" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" filter="url(#mShadow)"/>
+  <text x="24" y="578" fill="#091a32" font-size="12" font-weight="700">Top Selling Medicines</text>
+  <text x="24" y="602" fill="#0f172a" font-size="10" font-weight="600">1. Dolo 650 Tablet</text>
+  <text x="320" y="602" fill="#091a32" font-size="10" font-weight="700">₹5,520</text>
+  <text x="24" y="630" fill="#0f172a" font-size="10" font-weight="600">2. Pan 40 Tablet</text>
+  <text x="320" y="630" fill="#091a32" font-size="10" font-weight="700">₹14,910</text>
+  <text x="24" y="658" fill="#0f172a" font-size="10" font-weight="600">3. Augmentin 625 Duo</text>
+  <text x="320" y="658" fill="#091a32" font-size="10" font-weight="700">₹19,600</text>
+
+  <!-- MOBILE FOOTER -->
+  <rect x="0" y="810" width="390" height="34" fill="#ffffff"/>
+  <line x1="0" y1="810" x2="390" y2="810" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="16" y="830" fill="#94a3b8" font-size="10">IM MEDICOS Mobile Webview</text>
+  <text x="300" y="830" fill="#94a3b8" font-size="10">Station #01</text>
+</svg>
