@@ -29,6 +29,20 @@ export function calculateIncludedGst(grandTotal: number): {
 }
 
 /**
+ * Formats ISO date (YYYY-MM-DD) to Indian DD/MM/YYYY display format
+ */
+export function formatDisplayDate(dateStr: string): string {
+  if (!dateStr) return "";
+  const clean = dateStr.split("T")[0].trim();
+  const parts = clean.split("-");
+  if (parts.length === 3) {
+    const [y, m, d] = parts;
+    return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
+  }
+  return dateStr;
+}
+
+/**
  * Validates 10-digit Indian mobile number
  * Starts with 6, 7, 8, or 9
  */
@@ -164,3 +178,4 @@ export function formatAmountInIndianWords(amount: number): string {
   words += " Only";
   return words;
 }
+

@@ -301,7 +301,7 @@ class BillingService {
       grandTotal: totals.grandTotal,
       amountInWords: totals.amountInWords,
       storeSnapshot: {
-        storeName: store?.storeName || "IM MEDICOS PHARMACY",
+        storeName: store?.storeName || "",
         address: store?.address || null,
         phone: store?.phone || null,
         email: store?.email || null,
@@ -311,6 +311,9 @@ class BillingService {
         footerTerms: store?.footerTerms || null,
         showGstin: store?.showGstinOnInvoice ?? true,
         showAmountInWords: store?.showAmountInWords ?? true,
+        logoPath: store?.logoPath || null,
+        logoDataUrl: store?.logoDataUrl || null,
+        tagline: (store as any)?.tagline || null,
       },
       items: input.items.map((it, idx) => ({
         id: Date.now() + idx,

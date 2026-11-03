@@ -514,6 +514,8 @@ pub struct BillStoreSnapshot {
     pub footer_terms: Option<String>,
     pub show_gstin: bool,
     pub show_amount_in_words: bool,
+    pub logo_path: Option<String>,
+    pub tagline: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -624,6 +626,7 @@ pub fn migrate_billing_tables(conn: &Connection) -> Result<()> {
             store_dl_1 TEXT,
             store_dl_2 TEXT,
             store_footer_terms TEXT,
+            store_logo_path TEXT,
             show_gstin INTEGER NOT NULL DEFAULT 1,
             show_amount_in_words INTEGER NOT NULL DEFAULT 1,
             status TEXT NOT NULL DEFAULT 'COMPLETED',
@@ -717,6 +720,9 @@ pub fn migrate_billing_tables(conn: &Connection) -> Result<()> {
     }
     if !cols.iter().any(|c| c == "store_footer_terms") {
         conn.execute("ALTER TABLE bills ADD COLUMN store_footer_terms TEXT", []).ok();
+    }
+    if !cols.iter().any(|c| c == "store_logo_path") {
+        conn.execute("ALTER TABLE bills ADD COLUMN store_logo_path TEXT", []).ok();
     }
     if !cols.iter().any(|c| c == "show_gstin") {
         conn.execute("ALTER TABLE bills ADD COLUMN show_gstin INTEGER NOT NULL DEFAULT 1", []).ok();
@@ -1726,20 +1732,47 @@ pub fn save_bill_transaction(conn: &mut Connection, input: &SaveBillInput) -> Re
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
 
+    // Snapshot store logo if present
+    let mut bill_logo_path: Option<String> = None;
+    if let Some(ref l_path) = store.logo_path {
+        if !l_path.trim().is_empty() {
+            if let Some(db_dir) = conn.path().and_then(|p| p.parent()) {
+                let src_file = db_dir.join(l_path);
+                if src_file.exists() {
+                    let bill_logos_dir = db_dir.join("logos").join("bills");
+                    let _ = std::fs::create_dir_all(&bill_logos_dir);
+                    let ext = src_file.extension().and_then(|s| s.to_str()).unwrap_or("png");
+                    let timestamp = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    let snapshot_filename = format!("{}_{}.{}", bill_number.replace('-', "_"), timestamp, ext);
+                    let dest_file = bill_logos_dir.join(&snapshot_filename);
+                    if std::fs::copy(&src_file, &dest_file).is_ok() {
+                        bill_logo_path = Some(format!("logos/bills/{}", snapshot_filename));
+                    }
+                }
+            }
+            if bill_logo_path.is_none() {
+                bill_logo_path = Some(l_path.clone());
+            }
+        }
+    }
+
     // Insert bill record
     tx.execute(
         r#"INSERT INTO bills (
             bill_number, customer_name, customer_mobile, doctor_name, bill_date,
             discount_mode, payment_mode, sub_total, discount, gst_total, cgst, sgst, grand_total,
             amount_in_words, store_name, store_address, store_phone, store_email, store_gstin,
-            store_dl_1, store_dl_2, store_footer_terms, show_gstin, show_amount_in_words,
+            store_dl_1, store_dl_2, store_footer_terms, store_logo_path, show_gstin, show_amount_in_words,
             status, created_at
         ) VALUES (
             ?1, ?2, ?3, ?4, ?5,
             ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
             ?14, ?15, ?16, ?17, ?18, ?19,
-            ?20, ?21, ?22, ?23, ?24,
-            'COMPLETED', ?25
+            ?20, ?21, ?22, ?23, ?24, ?25,
+            'COMPLETED', ?26
         )"#,
         params![
             bill_number,
@@ -1764,6 +1797,7 @@ pub fn save_bill_transaction(conn: &mut Connection, input: &SaveBillInput) -> Re
             store.drug_license_1,
             store.drug_license_2,
             store.footer_terms,
+            bill_logo_path,
             if store.show_gstin_on_invoice { 1 } else { 0 },
             if store.show_amount_in_words { 1 } else { 0 },
             created_at,
@@ -1862,6 +1896,8 @@ pub fn save_bill_transaction(conn: &mut Connection, input: &SaveBillInput) -> Re
         footer_terms: store.footer_terms,
         show_gstin: store.show_gstin_on_invoice,
         show_amount_in_words: store.show_amount_in_words,
+        logo_path: bill_logo_path,
+        tagline: None,
     };
 
     Ok(BillRecord {

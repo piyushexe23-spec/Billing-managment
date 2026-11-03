@@ -437,6 +437,68 @@ console.log("\nTest 7: Static File & Component Verifications");
   console.log("✓ Test 7 Passed: All source code files, components, and backend contracts verified.");
 }
 
+// ----------------------------------------------------------------------
+// Test 8: Invoice PDF & Print Template Requirements (Command 05A Polish)
+// ----------------------------------------------------------------------
+console.log("\nTest 8: Invoice PDF & Print Template Specifications");
+{
+  const invoicePdfSrc = fs.readFileSync(path.resolve("src/components/billing/InvoicePdfDocument.tsx"), "utf8");
+  const invoicePrintSrc = fs.readFileSync(path.resolve("src/lib/invoicePrintService.ts"), "utf8");
+  const billingServiceSrc = fs.readFileSync(path.resolve("src/services/billingService.ts"), "utf8");
+  const dbSrc = fs.readFileSync(path.resolve("src-tauri/src/db.rs"), "utf8");
+
+  // 1. No blank filler rows
+  assert(!invoicePdfSrc.includes("blankRowsCount"), "InvoicePdfDocument must not have blankRowsCount or blank fill rows");
+  assert(!invoicePrintSrc.includes("blankRowsCount"), "invoicePrintService must not have blankRowsCount or blank fill rows");
+  assert(!invoicePrintSrc.includes("blank-row"), "invoicePrintService must not contain blank-row class");
+
+  // 2. GST Display: Text only 'CGST 9% + SGST 9% (Included)' - NO rupee amounts for GST
+  assert(invoicePdfSrc.includes("CGST 9% + SGST 9% (Included)"), "InvoicePdfDocument has CGST 9% + SGST 9% (Included)");
+  assert(invoicePrintSrc.includes("CGST 9% + SGST 9% (Included)"), "invoicePrintService has CGST 9% + SGST 9% (Included)");
+  assert(!invoicePdfSrc.includes("Incl. GST (18%):"), "InvoicePdfDocument must not have 'Incl. GST (18%):' amount row");
+  assert(!invoicePrintSrc.includes("Incl. GST (18%):"), "invoicePrintService must not have 'Incl. GST (18%):' amount row");
+  assert(!invoicePdfSrc.includes("• CGST 9%:"), "InvoicePdfDocument must not print rupee amount for CGST");
+  assert(!invoicePrintSrc.includes("• CGST 9%:"), "invoicePrintService must not print rupee amount for CGST");
+  assert(!invoicePdfSrc.includes("• SGST 9%:"), "InvoicePdfDocument must not print rupee amount for SGST");
+  assert(!invoicePrintSrc.includes("• SGST 9%:"), "invoicePrintService must not print rupee amount for SGST");
+  assert(!invoicePdfSrc.includes("* All prices are inclusive of GST"), "InvoicePdfDocument must not contain inclusive footnote");
+  assert(!invoicePrintSrc.includes("* All prices are inclusive of GST"), "invoicePrintService must not contain inclusive footnote");
+
+  // 3. Logo handling and snapshot
+  assert(invoicePdfSrc.includes("max-w-[70mm] max-h-[22mm]"), "InvoicePdfDocument sizes logo to max 70mm x 22mm preserving aspect ratio");
+  assert(invoicePrintSrc.includes("max-width: 70mm; max-height: 22mm"), "invoicePrintService sizes logo to max 70mm x 22mm");
+  assert(!invoicePdfSrc.includes("Medical Billing Software"), "InvoicePdfDocument must not have 'Medical Billing Software'");
+  assert(!invoicePrintSrc.includes("MEDICAL BILLING SOFTWARE"), "invoicePrintService must not have 'MEDICAL BILLING SOFTWARE'");
+  assert(!invoicePdfSrc.includes("Original For Recipient"), "Removed 'Original For Recipient'");
+  assert(!invoicePrintSrc.includes("Original For Recipient"), "Removed 'Original For Recipient' from print service");
+  assert(!invoicePdfSrc.includes("Page 1 of 1"), "Removed 'Page 1 of 1'");
+
+  // 4. Logo snapshotting in database & billing service
+  assert(dbSrc.includes("store_logo_path"), "Rust db.rs has store_logo_path column in bills table");
+  assert(billingServiceSrc.includes("logoPath: store?.logoPath || null"), "billingService snapshots logoPath");
+  assert(billingServiceSrc.includes("logoDataUrl: store?.logoDataUrl || null"), "billingService snapshots logoDataUrl");
+
+  // 5. Hardcoded fallbacks removed
+  assert(!billingServiceSrc.includes('store?.storeName || "IM MEDICOS PHARMACY"'), "Removed fallback 'IM MEDICOS PHARMACY'");
+  assert(!invoicePdfSrc.includes('Keep medicines in a cool, dry place away from sunlight.'), "No hardcoded terms fallback in InvoicePdfDocument");
+  assert(!invoicePrintSrc.includes('Keep medicines in a cool, dry place away from sunlight.'), "No hardcoded terms fallback in invoicePrintService");
+
+  // 6. Header dividers & pill title & underline fields
+  assert(invoicePdfSrc.includes("border-[1.5px] border-[#0b3a73]"), "Has thin navy outer page border");
+  assert(invoicePdfSrc.includes("TAX INVOICE / PHARMACY BILL"), "Has centered navy pill with TAX INVOICE / PHARMACY BILL");
+  assert(invoicePrintSrc.includes("TAX INVOICE / PHARMACY BILL"), "Print service has TAX INVOICE / PHARMACY BILL");
+  assert(invoicePdfSrc.includes("formatDisplayDate(bill.billDate)"), "Formats date as DD/MM/YYYY");
+  assert(invoicePrintSrc.includes("formatDisplayDate(bill.billDate)"), "Print service formats date as DD/MM/YYYY");
+
+  // 7. Multi-page pagination contracts
+  assert(invoicePdfSrc.includes("SINGLE_PAGE_MAX"), "InvoicePdfDocument defines pagination threshold");
+  assert(invoicePrintSrc.includes("SINGLE_PAGE_MAX"), "invoicePrintService defines pagination threshold");
+  assert(invoicePrintSrc.includes("page-break"), "invoicePrintService applies page-break");
+
+  console.log("✓ Test 8 Passed: Invoice PDF & Print Template specifications strictly verified.");
+}
+
 console.log("\n========================================================");
 console.log("ALL COMMAND 05A BILLING TESTS PASSED (100% SUCCESS)!");
 console.log("========================================================\n");
+

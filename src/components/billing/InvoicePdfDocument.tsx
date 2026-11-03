@@ -1,6 +1,6 @@
 import React from "react";
 import { BillRecord } from "@/types/billing";
-import { formatIndianCurrency } from "@/lib/billingConfig";
+import { formatIndianCurrency, formatDisplayDate } from "@/lib/billingConfig";
 
 interface InvoicePdfDocumentProps {
   bill: BillRecord;
@@ -8,336 +8,414 @@ interface InvoicePdfDocumentProps {
 
 export const InvoicePdfDocument: React.FC<InvoicePdfDocumentProps> = ({ bill }) => {
   const store = bill.storeSnapshot;
-  const itemsPerPage = 10;
-  const totalPages = Math.ceil(Math.max(bill.items.length, itemsPerPage) / itemsPerPage);
 
-  const pages = [];
-  for (let p = 0; p < totalPages; p++) {
-    const pageItems = bill.items.slice(p * itemsPerPage, (p + 1) * itemsPerPage);
-    const isLastPage = p === totalPages - 1;
-
-    // Fill remaining rows to always have at least itemsPerPage rows
-    const blankRowsCount = itemsPerPage - pageItems.length;
-
-    pages.push({
-      pageIndex: p + 1,
-      totalPages,
-      items: pageItems,
-      blankRowsCount,
-      isLastPage,
-    });
+  // Resolve logo source (from bill snapshot, falling back to local storage if needed)
+  let logoSrc: string | null = store.logoDataUrl || store.logoPath || null;
+  if (!logoSrc && typeof window !== "undefined") {
+    try {
+      const stored = localStorage.getItem("im_medicos_store_details_singleton_v1");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        logoSrc = parsed.logoDataUrl || parsed.logoPath || null;
+      }
+    } catch {
+      // Ignored
+    }
   }
 
-  // Parse terms bullets
+  // Parse terms bullets without hardcoded fallback
   const termsBullets = store.footerTerms
     ? store.footerTerms
         .split("\n")
-        .map((t) => t.trim())
+        .map((t) => t.trim().replace(/^\d+[\.\)]\s*/, ""))
         .filter(Boolean)
-    : [
-        "Goods once sold will not be taken back without original cash memo.",
-        "Prescribed medicines sold only on registered medical prescription.",
-        "Keep medicines in a cool, dry place away from sunlight.",
-      ];
+    : [];
+
+  // Pagination calculation: up to 18 items fit on single page with footer
+  const SINGLE_PAGE_MAX = 18;
+  const FIRST_PAGE_MAX_MULTI = 16;
+  const MIDDLE_PAGE_MAX = 22;
+  const LAST_PAGE_MAX = 16;
+
+  interface PageData {
+    pageNumber: number;
+    totalPages: number;
+    items: typeof bill.items;
+    startIndex: number;
+    isLastPage: boolean;
+  }
+
+  const pages: PageData[] = [];
+  const allItems = bill.items;
+
+  if (allItems.length <= SINGLE_PAGE_MAX) {
+    pages.push({
+      pageNumber: 1,
+      totalPages: 1,
+      items: allItems,
+      startIndex: 0,
+      isLastPage: true,
+    });
+  } else {
+    let cursor = 0;
+    // Page 1
+    const p1Items = allItems.slice(0, FIRST_PAGE_MAX_MULTI);
+    cursor = FIRST_PAGE_MAX_MULTI;
+    pages.push({
+      pageNumber: 1,
+      totalPages: 1, // updated below
+      items: p1Items,
+      startIndex: 0,
+      isLastPage: false,
+    });
+
+    while (cursor < allItems.length) {
+      const remainingCount = allItems.length - cursor;
+      if (remainingCount <= LAST_PAGE_MAX) {
+        pages.push({
+          pageNumber: pages.length + 1,
+          totalPages: 1,
+          items: allItems.slice(cursor),
+          startIndex: cursor,
+          isLastPage: true,
+        });
+        break;
+      } else if (remainingCount <= MIDDLE_PAGE_MAX) {
+        const take = Math.min(remainingCount - 1, LAST_PAGE_MAX);
+        pages.push({
+          pageNumber: pages.length + 1,
+          totalPages: 1,
+          items: allItems.slice(cursor, cursor + take),
+          startIndex: cursor,
+          isLastPage: false,
+        });
+        cursor += take;
+      } else {
+        pages.push({
+          pageNumber: pages.length + 1,
+          totalPages: 1,
+          items: allItems.slice(cursor, cursor + MIDDLE_PAGE_MAX),
+          startIndex: cursor,
+          isLastPage: false,
+        });
+        cursor += MIDDLE_PAGE_MAX;
+      }
+    }
+
+    const total = pages.length;
+    pages.forEach((p) => {
+      p.totalPages = total;
+    });
+  }
 
   return (
     <div className="invoice-print-container bg-white text-slate-900 font-sans print:p-0">
       {pages.map((page) => (
         <div
-          key={`invoice-page-${page.pageIndex}`}
-          className="a4-page w-[210mm] min-h-[297mm] max-h-[297mm] h-[297mm] mx-auto p-[10mm] box-border bg-white flex flex-col justify-between border border-slate-200 print:border-none shadow-md print:shadow-none print:m-0 print:p-[8mm] print:break-after-page"
+          key={`invoice-page-${page.pageNumber}`}
+          className={`a4-page w-[210mm] max-w-[210mm] mx-auto p-[6mm] box-border bg-white border border-slate-300 print:border-none shadow-md print:shadow-none print:m-0 print:p-[4mm] ${
+            !page.isLastPage ? "print:break-after-page mb-6 print:mb-0" : ""
+          }`}
           style={{ boxSizing: "border-box" }}
         >
-          {/* Top Section */}
-          <div className="space-y-2">
-            {/* 1. Header with Fixed Logo & Store Details */}
-            <div className="flex items-start justify-between pb-3 border-b-2 border-medical-navy-900">
-              {/* Brand Logo & Tagline */}
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-medical-navy-900 to-medical-navy-950 flex items-center justify-center p-2 shadow-xs shrink-0">
-                  <svg viewBox="0 0 32 32" fill="none" className="w-full h-full">
-                    <rect x="13" y="6" width="6" height="20" rx="2.5" fill="#22c55e" />
-                    <rect x="6" y="13" width="20" height="6" rx="2.5" fill="#22c55e" />
-                    <path
-                      d="M9 16H13L15 12L17 20L19 16H23"
-                      stroke="#ffffff"
-                      strokeWidth="2.2"
+          {/* Thin Navy Outer Page Border Container */}
+          <div className="border-[1.5px] border-[#0b3a73] p-[6mm] box-border bg-white flex flex-col justify-start">
+            
+            {/* 1. Header with 3 Columns & Thin Vertical Dividers */}
+            <div className="flex items-center justify-between pb-2.5">
+              
+              {/* Left Column: Logo Block or Store Name */}
+              <div className="w-[36%] shrink-0 pr-3 flex flex-col justify-center min-h-[50px]">
+                {logoSrc ? (
+                  <div className="max-w-[70mm] max-h-[22mm] flex items-center">
+                    <img
+                      src={logoSrc}
+                      alt={store.storeName || "Pharmacy Logo"}
+                      className="max-w-[70mm] max-h-[22mm] object-contain object-left"
+                      style={{ imageRendering: "auto" }}
+                    />
+                  </div>
+                ) : (
+                  <h1 className="text-lg font-black text-[#0b3a73] tracking-tight uppercase leading-tight">
+                    {store.storeName || "PHARMACY"}
+                  </h1>
+                )}
+                {store.tagline && (
+                  <p className="text-[9.5px] font-medium text-slate-500 mt-0.5 tracking-wide">
+                    {store.tagline}
+                  </p>
+                )}
+              </div>
+
+              {/* Thin Vertical Navy Divider 1 */}
+              <div className="w-[1px] bg-[#0b3a73] self-stretch my-0.5" />
+
+              {/* Middle Column: GSTIN & Drug Licenses */}
+              <div className="w-[28%] px-3 text-[10.5px] space-y-1">
+                {store.showGstin && store.gstin && (
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="font-bold text-[#0b3a73] shrink-0">GSTIN :</span>
+                    <span className="font-semibold text-slate-800 break-all">{store.gstin}</span>
+                  </div>
+                )}
+                {(store.drugLicense1 || store.drugLicense2) && (
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="font-bold text-[#0b3a73] shrink-0">DL No. :</span>
+                    <div className="font-semibold text-slate-800 leading-tight">
+                      {store.drugLicense1 && <div>{store.drugLicense1}</div>}
+                      {store.drugLicense2 && <div className="mt-0.5">{store.drugLicense2}</div>}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Thin Vertical Navy Divider 2 */}
+              <div className="w-[1px] bg-[#0b3a73] self-stretch my-0.5" />
+
+              {/* Right Column: Address & Phone */}
+              <div className="w-[34%] pl-3 text-[10.5px] space-y-1 text-slate-700">
+                {store.address && (
+                  <div className="flex items-start gap-1.5">
+                    {/* Location Pin SVG */}
+                    <svg
+                      className="w-3.5 h-3.5 text-[#0b3a73] shrink-0 mt-0.5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <div className="text-2xl font-black text-medical-navy-950 tracking-tight leading-none">
-                    IM <span className="text-medical-navy-800">MEDICOS</span>
-                    <span className="text-medical-green-600">.</span>
+                    >
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                      <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span className="text-[10px] leading-tight line-clamp-2">{store.address}</span>
                   </div>
-                  <div className="text-[9.5px] font-bold text-slate-500 uppercase tracking-widest mt-1">
-                    Medical Billing Software
+                )}
+                {store.phone && (
+                  <div className="flex items-center gap-1.5">
+                    {/* Phone SVG */}
+                    <svg
+                      className="w-3.5 h-3.5 text-[#0b3a73] shrink-0"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                    </svg>
+                    <span className="text-[10px] font-semibold text-slate-800">{store.phone}</span>
                   </div>
-                </div>
+                )}
               </div>
 
-              {/* Store License & Info */}
-              <div className="text-right space-y-0.5 max-w-[55%]">
-                <h1 className="text-base font-extrabold text-medical-navy-950 leading-tight">
-                  {store.storeName}
-                </h1>
-                {store.address && (
-                  <p className="text-[11px] text-slate-600 leading-tight">{store.address}</p>
-                )}
-                <div className="text-[11px] text-slate-700 flex items-center justify-end gap-2 flex-wrap pt-0.5 font-medium">
-                  {store.phone && <span>Ph: {store.phone}</span>}
-                  {store.email && <span>Email: {store.email}</span>}
-                </div>
-                <div className="text-[10px] text-slate-800 font-semibold flex items-center justify-end gap-2 flex-wrap pt-0.5">
-                  {store.showGstin && store.gstin && (
-                    <span className="bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300">
-                      GSTIN: {store.gstin}
-                    </span>
-                  )}
-                  {store.drugLicense1 && (
-                    <span className="bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300">
-                      DL 1: {store.drugLicense1}
-                    </span>
-                  )}
-                  {store.drugLicense2 && (
-                    <span className="bg-slate-100 px-1.5 py-0.5 rounded border border-slate-300">
-                      DL 2: {store.drugLicense2}
-                    </span>
-                  )}
-                </div>
-              </div>
             </div>
 
-            {/* 2. Title Bar */}
-            <div className="bg-medical-navy-950 text-white text-center py-1 rounded-sm flex items-center justify-between px-3">
-              <span className="text-[10px] tracking-wider uppercase font-semibold text-medical-green-400">
-                Original For Recipient
-              </span>
-              <span className="text-xs font-black tracking-widest uppercase">
+            {/* Full-Width Navy Header Underline */}
+            <div className="w-full h-[2px] bg-[#0b3a73]" />
+
+            {/* 2. Centered Rounded Navy Pill Title */}
+            <div className="text-center my-2">
+              <span className="inline-block bg-[#0b3a73] text-white px-6 py-1 rounded-full text-[10.5px] font-bold tracking-wider uppercase">
                 TAX INVOICE / PHARMACY BILL
               </span>
-              <span className="text-[10px] tracking-wider text-slate-300">
-                Page {page.pageIndex} of {page.totalPages}
-              </span>
             </div>
 
-            {/* 3. Patient & Invoice Meta Grid */}
-            <div className="grid grid-cols-2 gap-4 p-2 bg-slate-50 border border-slate-200 rounded text-xs">
+            {/* 3. Underline-Style Meta Fields (No Boxes) */}
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11px] mb-2 px-1">
+              {/* Left Column */}
               <div className="space-y-1">
-                <div className="flex">
-                  <span className="w-24 text-slate-500 font-semibold">Bill No.:</span>
-                  <span className="font-extrabold text-medical-navy-950 font-mono">
+                <div className="flex items-baseline">
+                  <span className="font-bold text-[#0b3a73] w-20 shrink-0">Bill No. :</span>
+                  <span className="border-b border-slate-400 font-bold text-slate-900 pb-0.5 grow">
                     {bill.billNumber}
                   </span>
                 </div>
-                <div className="flex">
-                  <span className="w-24 text-slate-500 font-semibold">Date:</span>
-                  <span className="font-medium text-slate-800">{bill.billDate}</span>
-                </div>
-                <div className="flex">
-                  <span className="w-24 text-slate-500 font-semibold">Payment Mode:</span>
-                  <span className="font-bold text-slate-800">{bill.paymentMode}</span>
+                <div className="flex items-baseline">
+                  <span className="font-bold text-[#0b3a73] w-20 shrink-0">Date :</span>
+                  <span className="border-b border-slate-400 font-semibold text-slate-800 pb-0.5 grow">
+                    {formatDisplayDate(bill.billDate)}
+                    <span className="ml-3 text-[9.5px] font-normal text-slate-500">
+                      (Mode: {bill.paymentMode})
+                    </span>
+                  </span>
                 </div>
               </div>
 
+              {/* Right Column */}
               <div className="space-y-1">
-                <div className="flex">
-                  <span className="w-28 text-slate-500 font-semibold">Patient Name:</span>
-                  <span className="font-bold text-slate-900">{bill.customerName}</span>
+                <div>
+                  <div className="flex items-baseline">
+                    <span className="font-bold text-[#0b3a73] w-36 shrink-0">
+                      Patient / Customer Name :
+                    </span>
+                    <span className="border-b border-slate-400 font-bold text-slate-900 pb-0.5 grow">
+                      {bill.customerName}
+                    </span>
+                  </div>
+                  {bill.customerMobile && (
+                    <div className="text-[9.5px] text-slate-500 pl-36 pt-0.5 font-medium">
+                      Mobile: +91 {bill.customerMobile}
+                    </div>
+                  )}
                 </div>
-                <div className="flex">
-                  <span className="w-28 text-slate-500 font-semibold">Mobile:</span>
-                  <span className="font-medium text-slate-800 font-mono">
-                    +91 {bill.customerMobile}
-                  </span>
-                </div>
-                <div className="flex">
-                  <span className="w-28 text-slate-500 font-semibold">Doctor Name:</span>
-                  <span className="font-medium text-slate-800">
-                    {bill.doctorName ? `Dr. ${bill.doctorName.replace(/^Dr\.?\s*/i, "")}` : "—"}
+
+                <div className="flex items-baseline">
+                  <span className="font-bold text-[#0b3a73] w-36 shrink-0">Doctor Name :</span>
+                  <span className="border-b border-slate-400 text-slate-800 pb-0.5 grow font-medium">
+                    {bill.doctorName ? `Dr. ${bill.doctorName.replace(/^Dr\.?\s*/i, "")}` : "________________________"}
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* 4. Bill Items Table */}
-            <table className="w-full border-collapse border border-slate-300 text-[11px]">
+            {/* 4. Bill Items Table (Thin Grey Grid Lines, Sans-Serif, Only Actual Items) */}
+            <table className="w-full border-collapse border border-slate-300 text-[10.5px]">
               <thead>
-                <tr className="bg-medical-navy-900 text-white font-bold text-left">
-                  <th className="py-1.5 px-2 border border-slate-400 text-center w-8">S.No.</th>
-                  <th className="py-1.5 px-2 border border-slate-400">Medicine Name</th>
-                  <th className="py-1.5 px-2 border border-slate-400 w-24">Batch No.</th>
-                  <th className="py-1.5 px-2 border border-slate-400 w-16 text-center">Expiry</th>
-                  <th className="py-1.5 px-2 border border-slate-400 w-12 text-center">Qty.</th>
-                  <th className="py-1.5 px-2 border border-slate-400 w-16 text-right">MRP (Rs)</th>
-                  <th className="py-1.5 px-2 border border-slate-400 w-16 text-right">Rate (Rs)</th>
-                  <th className="py-1.5 px-2 border border-slate-400 w-20 text-right">Amount (Rs)</th>
+                <tr className="bg-[#0b3a73] text-white font-bold">
+                  <th className="py-1 px-1.5 border border-slate-300 text-center w-8">S.No.</th>
+                  <th className="py-1 px-2 border border-slate-300 text-left">Medicine Name</th>
+                  <th className="py-1 px-1.5 border border-slate-300 text-left w-24">Batch No.</th>
+                  <th className="py-1 px-1.5 border border-slate-300 text-center w-16">Expiry</th>
+                  <th className="py-1 px-1.5 border border-slate-300 text-center w-10">Qty.</th>
+                  <th className="py-1 px-1.5 border border-slate-300 text-right w-16">MRP (Rs)</th>
+                  <th className="py-1 px-1.5 border border-slate-300 text-right w-16">Rate (Rs)</th>
+                  <th className="py-1 px-1.5 border border-slate-300 text-right w-20">Amount (Rs)</th>
                 </tr>
               </thead>
               <tbody>
                 {page.items.map((it, idx) => {
-                  const sNo = (page.pageIndex - 1) * itemsPerPage + idx + 1;
+                  const sNo = page.startIndex + idx + 1;
                   return (
-                    <tr
-                      key={`item-${it.id || idx}`}
-                      className="border-b border-slate-200 hover:bg-slate-50"
-                    >
-                      <td className="py-1 px-2 border border-slate-200 text-center font-mono">
+                    <tr key={`item-${it.id || idx}`} className="border-b border-slate-200">
+                      <td className="py-1 px-1.5 border border-slate-300 text-center text-slate-700">
                         {sNo}
                       </td>
-                      <td className="py-1 px-2 border border-slate-200 font-semibold text-medical-navy-950 truncate max-w-[180px]">
+                      <td className="py-1 px-2 border border-slate-300 font-semibold text-slate-900">
                         {it.medicineName}
                         {it.unit ? ` (${it.unit})` : ""}
                       </td>
-                      <td className="py-1 px-2 border border-slate-200 font-mono text-[10px]">
+                      <td className="py-1 px-1.5 border border-slate-300 text-slate-800">
                         {it.batchNumber}
                       </td>
-                      <td className="py-1 px-2 border border-slate-200 text-center font-mono text-[10px]">
+                      <td className="py-1 px-1.5 border border-slate-300 text-center text-slate-800">
                         {it.expDate}
                       </td>
-                      <td className="py-1 px-2 border border-slate-200 text-center font-bold">
+                      <td className="py-1 px-1.5 border border-slate-300 text-center font-bold text-slate-900">
                         {it.quantity}
                       </td>
-                      <td className="py-1 px-2 border border-slate-200 text-right font-mono">
+                      <td className="py-1 px-1.5 border border-slate-300 text-right text-slate-700">
                         {it.mrp.toFixed(2)}
                       </td>
-                      <td className="py-1 px-2 border border-slate-200 text-right font-mono font-medium">
+                      <td className="py-1 px-1.5 border border-slate-300 text-right text-slate-800 font-medium">
                         {it.rate.toFixed(2)}
                       </td>
-                      <td className="py-1 px-2 border border-slate-200 text-right font-mono font-bold text-slate-900">
+                      <td className="py-1 px-1.5 border border-slate-300 text-right font-bold text-slate-900">
                         {it.amount.toFixed(2)}
                       </td>
                     </tr>
                   );
                 })}
-
-                {/* Blank Fill Rows to maintain consistent 10-row height */}
-                {Array.from({ length: page.blankRowsCount }).map((_, bIdx) => (
-                  <tr key={`blank-${bIdx}`} className="border-b border-slate-100">
-                    <td className="py-2.5 px-2 border border-slate-200 text-center text-transparent">
-                      .
-                    </td>
-                    <td className="py-2.5 px-2 border border-slate-200">&nbsp;</td>
-                    <td className="py-2.5 px-2 border border-slate-200">&nbsp;</td>
-                    <td className="py-2.5 px-2 border border-slate-200">&nbsp;</td>
-                    <td className="py-2.5 px-2 border border-slate-200">&nbsp;</td>
-                    <td className="py-2.5 px-2 border border-slate-200">&nbsp;</td>
-                    <td className="py-2.5 px-2 border border-slate-200">&nbsp;</td>
-                    <td className="py-2.5 px-2 border border-slate-200">&nbsp;</td>
-                  </tr>
-                ))}
               </tbody>
             </table>
-          </div>
 
-          {/* Bottom Section (Totals on Last Page, Footer on All Pages) */}
-          <div className="space-y-3 pt-2">
+            {/* 5. Bottom Section: Follows DIRECTLY below table on Last Page */}
             {page.isLastPage ? (
-              <>
-                {/* 5. Totals & Tax Box */}
-                <div className="grid grid-cols-12 gap-3 items-start border-t-2 border-medical-navy-900 pt-2">
-                  {/* Amount in words */}
-                  <div className="col-span-7 space-y-1">
+              <div className="mt-3 space-y-2">
+                <div className="grid grid-cols-12 gap-3 items-start">
+                  
+                  {/* Left Column: Thank You Box & Terms */}
+                  <div className="col-span-7">
+                    <div className="border border-slate-300 rounded p-2.5 text-[10px] space-y-1 bg-white">
+                      <div className="font-bold text-[#0b3a73] text-[11px]">
+                        Thank you for choosing I M Medicos
+                      </div>
+                      <div className="text-slate-600 font-semibold italic text-[9.5px]">
+                        Please take medicines as directed by the Physician.
+                      </div>
+                      {termsBullets.length > 0 && (
+                        <div className="pt-1">
+                          <div className="font-bold text-slate-700 text-[9px] uppercase tracking-wider">
+                            Terms &amp; Conditions:
+                          </div>
+                          <ul className="list-disc list-inside text-[8.5px] text-slate-600 space-y-0.5 pt-0.5">
+                            {termsBullets.map((bullet, bIdx) => (
+                              <li key={`term-${bIdx}`} className="leading-tight">
+                                {bullet}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Amount in Words (Below terms box, left) */}
                     {store.showAmountInWords && bill.amountInWords && (
-                      <div className="bg-slate-50 border border-slate-200 p-2 rounded text-[11px]">
-                        <span className="font-bold text-slate-600 block text-[9.5px] uppercase tracking-wider">
-                          Amount Chargeable (in words):
-                        </span>
-                        <span className="font-bold text-medical-navy-950 italic">
+                      <div className="mt-2 text-[10.5px]">
+                        <span className="font-bold text-[#0b3a73]">Amount in Words : </span>
+                        <span className="border-b border-slate-400 font-semibold text-slate-900 pb-0.5 underline">
                           {bill.amountInWords}
                         </span>
                       </div>
                     )}
-
-                    {/* Tax Breakdown Notice */}
-                    <div className="text-[10px] text-slate-500 pt-1 leading-relaxed">
-                      * All prices are inclusive of GST. Tax amount reflects included taxes as per
-                      statutory rules.
-                    </div>
                   </div>
 
-                  {/* Calculations Table */}
-                  <div className="col-span-5 bg-slate-50 border border-slate-300 rounded p-2 text-xs space-y-1">
-                    <div className="flex justify-between text-slate-600">
-                      <span>Sub Total:</span>
-                      <span className="font-mono">{formatIndianCurrency(bill.subTotal)}</span>
+                  {/* Right Column: Totals Box & Authorised Signatory */}
+                  <div className="col-span-5 flex flex-col items-end">
+                    
+                    {/* Bordered, Rounded Totals Box (4 Rows) */}
+                    <div className="w-full border border-[#0b3a73] rounded-md overflow-hidden text-[11px]">
+                      {/* Row 1: Sub Total */}
+                      <div className="flex justify-between items-center px-3 py-1 bg-white border-b border-slate-200">
+                        <span className="text-slate-700 font-semibold">Sub Total:</span>
+                        <span className="font-bold text-slate-900">
+                          {formatIndianCurrency(bill.subTotal)}
+                        </span>
+                      </div>
+
+                      {/* Row 2: Discount */}
+                      <div className="flex justify-between items-center px-3 py-1 bg-white border-b border-slate-200">
+                        <span className="text-slate-700 font-semibold">Discount:</span>
+                        <span className="font-bold text-slate-900">
+                          {bill.discount > 0 ? `- ${formatIndianCurrency(bill.discount)}` : "₹ 0.00"}
+                        </span>
+                      </div>
+
+                      {/* Row 3: GST Row (Text Only, No Rupee Amounts Anywhere!) */}
+                      <div className="flex justify-between items-center px-3 py-1 bg-slate-50 border-b border-slate-200 text-[10px] text-slate-600 font-semibold">
+                        <span>CGST 9% + SGST 9% (Included)</span>
+                        <span></span>
+                      </div>
+
+                      {/* Row 4: Grand Total (Filled Navy Row with Bold White Text) */}
+                      <div className="flex justify-between items-center px-3 py-1.5 bg-[#0b3a73] text-white font-black text-xs">
+                        <span>Grand Total:</span>
+                        <span>{formatIndianCurrency(bill.grandTotal)}</span>
+                      </div>
                     </div>
 
-                    <div className="flex justify-between text-medical-green-700">
-                      <span>Discount:</span>
-                      <span className="font-mono">
-                        {bill.discount > 0 ? `- ${formatIndianCurrency(bill.discount)}` : "₹ 0.00"}
-                      </span>
+                    {/* Bottom Right: For Store Name & Signature */}
+                    <div className="w-full text-right mt-3">
+                      <div className="font-bold text-[#0b3a73] text-[10.5px]">
+                        For {store.storeName}
+                      </div>
+                      <div className="mt-8 pt-1 border-t border-slate-500 inline-block w-[140px] text-center text-[9.5px] font-bold text-slate-800">
+                        Authorised Signatory
+                      </div>
                     </div>
 
-                    {/* GST Included Line */}
-                    <div className="flex justify-between text-slate-600 text-[11px] pt-0.5 border-t border-slate-200">
-                      <span>Incl. GST (18%):</span>
-                      <span className="font-mono">{formatIndianCurrency(bill.gstTotal)}</span>
-                    </div>
-
-                    <div className="flex justify-between text-[10px] text-slate-500 pl-2">
-                      <span>• CGST 9%:</span>
-                      <span className="font-mono">{formatIndianCurrency(bill.cgst)}</span>
-                    </div>
-
-                    <div className="flex justify-between text-[10px] text-slate-500 pl-2">
-                      <span>• SGST 9%:</span>
-                      <span className="font-mono">{formatIndianCurrency(bill.sgst)}</span>
-                    </div>
-
-                    {/* Grand Total */}
-                    <div className="flex justify-between text-sm font-black text-medical-navy-950 pt-1 border-t-2 border-medical-navy-900">
-                      <span>Grand Total:</span>
-                      <span className="font-mono text-medical-navy-900">
-                        {formatIndianCurrency(bill.grandTotal)}
-                      </span>
-                    </div>
                   </div>
+
                 </div>
-              </>
+              </div>
             ) : (
-              <div className="text-right text-[11px] font-bold text-slate-500 italic py-2 border-t border-slate-200">
-                Continued on Page {page.pageIndex + 1}...
+              <div className="text-right text-[10px] font-bold text-slate-500 italic py-2">
+                Continued on Page {page.pageNumber + 1}...
               </div>
             )}
 
-            {/* 6. Footer Section (Terms, Instructions, and Signatory) */}
-            <div className="border-t border-slate-300 pt-2 grid grid-cols-12 gap-3 text-[10px] items-end">
-              {/* Left: Thank You Note & Terms Bullets */}
-              <div className="col-span-8 space-y-1">
-                <div className="font-bold text-medical-navy-950 text-[10.5px]">
-                  Thank you for choosing I M Medicos
-                </div>
-                <div className="text-slate-600 font-semibold italic text-[9.5px]">
-                  Please take medicines as directed by the Physician.
-                </div>
-                <div className="pt-1">
-                  <div className="font-bold text-slate-700 text-[9px] uppercase tracking-wider">
-                    Terms &amp; Conditions:
-                  </div>
-                  <ul className="list-disc list-inside text-[9px] text-slate-500 space-y-0.5 pt-0.5">
-                    {termsBullets.map((bullet, bIdx) => (
-                      <li key={`term-${bIdx}`} className="leading-tight">
-                        {bullet.replace(/^\d+[\.\)]\s*/, "")}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {/* Right: Signature */}
-              <div className="col-span-4 text-right space-y-8">
-                <div className="font-bold text-slate-700 text-[10px]">
-                  For <span className="font-extrabold text-medical-navy-950">{store.storeName}</span>
-                </div>
-                <div className="pt-6 border-t border-slate-400 text-slate-800 font-bold inline-block min-w-[140px] text-center text-[10px]">
-                  Authorised Signatory
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       ))}

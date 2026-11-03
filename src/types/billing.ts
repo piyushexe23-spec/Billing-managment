@@ -73,6 +73,9 @@ export interface StoreSnapshot {
   footerTerms?: string | null;
   showGstin: boolean;
   showAmountInWords: boolean;
+  logoPath?: string | null;
+  logoDataUrl?: string | null;
+  tagline?: string | null;
 }
 
 export interface BillItemRecord {
@@ -135,3 +138,4 @@ export interface SaveBillInput {
     amount: number;
   }>;
 }
+

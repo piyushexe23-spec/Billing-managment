@@ -104,3 +104,4 @@ for (const dir of targetDirs) {
   fs.writeFileSync(path.join(dir, "IM_logo.png"), png);
   console.log(`Saved IM_logo.png to ${dir}`);
 }
+

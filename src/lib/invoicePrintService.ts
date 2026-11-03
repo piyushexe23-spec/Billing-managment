@@ -4,155 +4,338 @@
  */
 
 import { BillRecord } from "@/types/billing";
-import { formatIndianCurrency } from "@/lib/billingConfig";
+import { formatIndianCurrency, formatDisplayDate } from "@/lib/billingConfig";
 
 export function generateInvoiceHtml(bill: BillRecord): string {
   const store = bill.storeSnapshot;
-  const itemsPerPage = 10;
-  const totalPages = Math.ceil(Math.max(bill.items.length, itemsPerPage) / itemsPerPage);
 
+  // Resolve logo source (from bill snapshot, falling back to local storage if needed)
+  let logoSrc: string | null = store.logoDataUrl || store.logoPath || null;
+  if (!logoSrc && typeof window !== "undefined") {
+    try {
+      const stored = localStorage.getItem("im_medicos_store_details_singleton_v1");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        logoSrc = parsed.logoDataUrl || parsed.logoPath || null;
+      }
+    } catch {
+      // Ignored
+    }
+  }
+
+  // Parse terms bullets without hardcoded fallback
   const termsBullets = store.footerTerms
     ? store.footerTerms
         .split("\n")
-        .map((t) => t.trim())
+        .map((t) => t.trim().replace(/^\d+[\.\)]\s*/, ""))
         .filter(Boolean)
-    : [
-        "Goods once sold will not be taken back without original cash memo.",
-        "Prescribed medicines sold only on registered medical prescription.",
-        "Keep medicines in a cool, dry place away from sunlight.",
-      ];
+    : [];
+
+  // Pagination calculation: up to 18 items fit on single page with footer
+  const SINGLE_PAGE_MAX = 18;
+  const FIRST_PAGE_MAX_MULTI = 16;
+  const MIDDLE_PAGE_MAX = 22;
+  const LAST_PAGE_MAX = 16;
+
+  interface PageData {
+    pageNumber: number;
+    totalPages: number;
+    items: typeof bill.items;
+    startIndex: number;
+    isLastPage: boolean;
+  }
+
+  const pages: PageData[] = [];
+  const allItems = bill.items;
+
+  if (allItems.length <= SINGLE_PAGE_MAX) {
+    pages.push({
+      pageNumber: 1,
+      totalPages: 1,
+      items: allItems,
+      startIndex: 0,
+      isLastPage: true,
+    });
+  } else {
+    let cursor = 0;
+    // Page 1
+    const p1Items = allItems.slice(0, FIRST_PAGE_MAX_MULTI);
+    cursor = FIRST_PAGE_MAX_MULTI;
+    pages.push({
+      pageNumber: 1,
+      totalPages: 1,
+      items: p1Items,
+      startIndex: 0,
+      isLastPage: false,
+    });
+
+    while (cursor < allItems.length) {
+      const remainingCount = allItems.length - cursor;
+      if (remainingCount <= LAST_PAGE_MAX) {
+        pages.push({
+          pageNumber: pages.length + 1,
+          totalPages: 1,
+          items: allItems.slice(cursor),
+          startIndex: cursor,
+          isLastPage: true,
+        });
+        break;
+      } else if (remainingCount <= MIDDLE_PAGE_MAX) {
+        const take = Math.min(remainingCount - 1, LAST_PAGE_MAX);
+        pages.push({
+          pageNumber: pages.length + 1,
+          totalPages: 1,
+          items: allItems.slice(cursor, cursor + take),
+          startIndex: cursor,
+          isLastPage: false,
+        });
+        cursor += take;
+      } else {
+        pages.push({
+          pageNumber: pages.length + 1,
+          totalPages: 1,
+          items: allItems.slice(cursor, cursor + MIDDLE_PAGE_MAX),
+          startIndex: cursor,
+          isLastPage: false,
+        });
+        cursor += MIDDLE_PAGE_MAX;
+      }
+    }
+
+    const total = pages.length;
+    pages.forEach((p) => {
+      p.totalPages = total;
+    });
+  }
 
   let pagesHtml = "";
 
-  for (let p = 0; p < totalPages; p++) {
-    const pageItems = bill.items.slice(p * itemsPerPage, (p + 1) * itemsPerPage);
-    const isLastPage = p === totalPages - 1;
-    const blankRowsCount = itemsPerPage - pageItems.length;
-
+  pages.forEach((page) => {
     let rowsHtml = "";
-    pageItems.forEach((it, idx) => {
-      const sNo = p * itemsPerPage + idx + 1;
+    page.items.forEach((it, idx) => {
+      const sNo = page.startIndex + idx + 1;
       rowsHtml += `
         <tr>
-          <td style="text-align: center; font-family: monospace;">${sNo}</td>
+          <td style="text-align: center; color: #334155;">${sNo}</td>
           <td style="font-weight: 600; color: #0f172a;">${it.medicineName}${it.unit ? ` (${it.unit})` : ""}</td>
-          <td style="font-family: monospace;">${it.batchNumber}</td>
-          <td style="text-align: center; font-family: monospace;">${it.expDate}</td>
-          <td style="text-align: center; font-weight: bold;">${it.quantity}</td>
-          <td style="text-align: right; font-family: monospace;">${it.mrp.toFixed(2)}</td>
-          <td style="text-align: right; font-family: monospace;">${it.rate.toFixed(2)}</td>
-          <td style="text-align: right; font-family: monospace; font-weight: bold;">${it.amount.toFixed(2)}</td>
+          <td style="color: #1e293b;">${it.batchNumber}</td>
+          <td style="text-align: center; color: #1e293b;">${it.expDate}</td>
+          <td style="text-align: center; font-weight: bold; color: #0f172a;">${it.quantity}</td>
+          <td style="text-align: right; color: #334155;">${it.mrp.toFixed(2)}</td>
+          <td style="text-align: right; font-weight: 500; color: #1e293b;">${it.rate.toFixed(2)}</td>
+          <td style="text-align: right; font-weight: bold; color: #0f172a;">${it.amount.toFixed(2)}</td>
         </tr>
       `;
     });
 
-    for (let b = 0; b < blankRowsCount; b++) {
-      rowsHtml += `
-        <tr class="blank-row">
-          <td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td>
-        </tr>
+    // Middle Column licenses
+    let licensesHtml = "";
+    if (store.showGstin && store.gstin) {
+      licensesHtml += `
+        <div style="display: flex; gap: 4px; margin-bottom: 3px;">
+          <span style="font-weight: bold; color: #0b3a73; width: 55px; shrink: 0;">GSTIN :</span>
+          <span style="font-weight: 600; color: #1e293b;">${store.gstin}</span>
+        </div>
+      `;
+    }
+    if (store.drugLicense1 || store.drugLicense2) {
+      licensesHtml += `
+        <div style="display: flex; gap: 4px;">
+          <span style="font-weight: bold; color: #0b3a73; width: 55px; shrink: 0;">DL No. :</span>
+          <div style="font-weight: 600; color: #1e293b; line-height: 1.2;">
+            ${store.drugLicense1 ? `<div>${store.drugLicense1}</div>` : ""}
+            ${store.drugLicense2 ? `<div style="margin-top: 2px;">${store.drugLicense2}</div>` : ""}
+          </div>
+        </div>
       `;
     }
 
-    const totalsHtml = isLastPage
+    // Right Column Contact
+    let contactHtml = "";
+    if (store.address) {
+      contactHtml += `
+        <div style="display: flex; align-items: flex-start; gap: 6px; margin-bottom: 4px;">
+          <svg style="width: 14px; height: 14px; color: #0b3a73; flex-shrink: 0; margin-top: 1px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+          </svg>
+          <span style="font-size: 10px; color: #334155; line-height: 1.2;">${store.address}</span>
+        </div>
+      `;
+    }
+    if (store.phone) {
+      contactHtml += `
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <svg style="width: 14px; height: 14px; color: #0b3a73; flex-shrink: 0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
+          </svg>
+          <span style="font-size: 10px; font-weight: 600; color: #1e293b;">${store.phone}</span>
+        </div>
+      `;
+    }
+
+    // Logo HTML
+    const logoBlockHtml = logoSrc
+      ? `<div style="max-width: 70mm; max-height: 22mm; display: flex; align-items: center;">
+           <img src="${logoSrc}" alt="${store.storeName || "Pharmacy Logo"}" style="max-width: 70mm; max-height: 22mm; object-fit: contain; object-position: left center;" />
+         </div>`
+      : `<h1 style="margin: 0; font-size: 17px; font-weight: 800; color: #0b3a73; text-transform: uppercase; line-height: 1.2;">${store.storeName || "PHARMACY"}</h1>`;
+
+    const taglineHtml = store.tagline
+      ? `<p style="margin: 2px 0 0 0; font-size: 9.5px; font-weight: 500; color: #64748b; letter-spacing: 0.3px;">${store.tagline}</p>`
+      : "";
+
+    // Terms bullets HTML
+    let termsListHtml = "";
+    if (termsBullets.length > 0) {
+      termsListHtml = `
+        <div style="margin-top: 4px;">
+          <div style="font-weight: bold; color: #334155; font-size: 9px; text-transform: uppercase; letter-spacing: 0.5px;">Terms &amp; Conditions:</div>
+          <ul style="margin: 2px 0 0 14px; padding: 0; list-style-type: disc; font-size: 8.5px; color: #475569; line-height: 1.3;">
+            ${termsBullets.map((b) => `<li>${b}</li>`).join("")}
+          </ul>
+        </div>
+      `;
+    }
+
+    // Bottom section HTML (Only on Last Page)
+    const bottomHtml = page.isLastPage
       ? `
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; border-top: 2px solid #0f172a; padding-top: 8px; margin-top: 6px;">
-          <div style="width: 58%;">
-            ${
-              store.showAmountInWords && bill.amountInWords
-                ? `
-                <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 6px 10px; border-radius: 4px; font-size: 11px;">
-                  <span style="font-weight: bold; color: #64748b; font-size: 9.5px; text-transform: uppercase;">Amount in Words:</span><br/>
-                  <span style="font-weight: bold; color: #0f172a; font-style: italic;">${bill.amountInWords}</span>
+        <div style="margin-top: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+            
+            <!-- Left Box: Thank You & Terms -->
+            <div style="width: 58%;">
+              <div style="border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px 10px; background: #ffffff;">
+                <div style="font-weight: bold; color: #0b3a73; font-size: 11px;">Thank you for choosing I M Medicos</div>
+                <div style="color: #475569; font-style: italic; font-size: 9.5px; margin-top: 2px;">Please take medicines as directed by the Physician.</div>
+                ${termsListHtml}
+              </div>
+
+              ${
+                store.showAmountInWords && bill.amountInWords
+                  ? `
+                  <div style="margin-top: 8px; font-size: 10px;">
+                    <span style="font-weight: bold; color: #0b3a73;">Amount in Words : </span>
+                    <span style="font-weight: 600; text-decoration: underline; color: #0f172a;">${bill.amountInWords}</span>
+                  </div>
+                `
+                  : ""
+              }
+            </div>
+
+            <!-- Right Box: Totals & Signature -->
+            <div style="width: 40%; display: flex; flex-direction: column; align-items: flex-end;">
+              
+              <!-- Bordered Totals Box (4 Rows) -->
+              <div style="width: 100%; border: 1px solid #0b3a73; border-radius: 6px; overflow: hidden; font-size: 11px;">
+                <!-- Row 1: Sub Total -->
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; background: #ffffff; border-bottom: 1px solid #e2e8f0;">
+                  <span style="color: #334155; font-weight: 600;">Sub Total:</span>
+                  <span style="font-weight: bold; color: #0f172a;">${formatIndianCurrency(bill.subTotal)}</span>
                 </div>
-              `
-                : ""
-            }
-            <div style="font-size: 9.5px; color: #64748b; margin-top: 4px;">
-              * All prices are inclusive of GST. Tax amount reflects included taxes as per statutory rules.
+
+                <!-- Row 2: Discount -->
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; background: #ffffff; border-bottom: 1px solid #e2e8f0;">
+                  <span style="color: #334155; font-weight: 600;">Discount:</span>
+                  <span style="font-weight: bold; color: #0f172a;">${bill.discount > 0 ? `- ${formatIndianCurrency(bill.discount)}` : "₹ 0.00"}</span>
+                </div>
+
+                <!-- Row 3: GST Row (Text Only, No Rupee Amounts Anywhere!) -->
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 10px; color: #475569; font-weight: 600;">
+                  <span>CGST 9% + SGST 9% (Included)</span>
+                  <span></span>
+                </div>
+
+                <!-- Row 4: Grand Total (Filled Navy Row with Bold White Text) -->
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #0b3a73; color: #ffffff; font-weight: 900; font-size: 12.5px;">
+                  <span>Grand Total:</span>
+                  <span>${formatIndianCurrency(bill.grandTotal)}</span>
+                </div>
+              </div>
+
+              <!-- Signatory Block -->
+              <div style="width: 100%; text-align: right; margin-top: 12px;">
+                <div style="font-weight: bold; color: #0b3a73; font-size: 10.5px;">For ${store.storeName}</div>
+                <div style="margin-top: 32px; border-top: 1px solid #64748b; display: inline-block; width: 140px; text-align: center; font-size: 9.5px; font-weight: bold; color: #334155; padding-top: 3px;">
+                  Authorised Signatory
+                </div>
+              </div>
+
             </div>
-          </div>
-          
-          <div style="width: 38%; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px; font-size: 11px;">
-            <div style="display: flex; justify-content: space-between; color: #475569; margin-bottom: 2px;">
-              <span>Sub Total:</span>
-              <span style="font-family: monospace;">${formatIndianCurrency(bill.subTotal)}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; color: #15803d; margin-bottom: 4px;">
-              <span>Discount:</span>
-              <span style="font-family: monospace;">${bill.discount > 0 ? `- ${formatIndianCurrency(bill.discount)}` : "₹ 0.00"}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; color: #475569; border-top: 1px solid #e2e8f0; padding-top: 3px; font-size: 10px;">
-              <span>Incl. GST (18%):</span>
-              <span style="font-family: monospace;">${formatIndianCurrency(bill.gstTotal)}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; color: #64748b; padding-left: 8px; font-size: 9.5px;">
-              <span>• CGST 9%:</span>
-              <span style="font-family: monospace;">${formatIndianCurrency(bill.cgst)}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; color: #64748b; padding-left: 8px; font-size: 9.5px;">
-              <span>• SGST 9%:</span>
-              <span style="font-family: monospace;">${formatIndianCurrency(bill.sgst)}</span>
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 900; color: #0f172a; border-top: 2px solid #0f172a; padding-top: 4px; margin-top: 4px;">
-              <span>Grand Total:</span>
-              <span style="font-family: monospace;">${formatIndianCurrency(bill.grandTotal)}</span>
-            </div>
+
           </div>
         </div>
       `
-      : `<div style="text-align: right; font-size: 10.5px; font-weight: bold; color: #64748b; font-style: italic; padding: 4px 0;">Continued on Page ${p + 2}...</div>`;
+      : `<div style="text-align: right; font-size: 10px; font-weight: bold; color: #64748b; font-style: italic; padding: 6px 0;">Continued on Page ${page.pageNumber + 1}...</div>`;
 
     pagesHtml += `
-      <div class="a4-page">
-        <div>
+      <div class="a4-page ${!page.isLastPage ? "page-break" : ""}">
+        <div class="page-border-container">
+          
           <!-- Header -->
           <div class="header">
-            <div class="logo-box">
-              <svg viewBox="0 0 320 80" width="180" height="45">
-                <rect x="0" y="0" width="45" height="45" rx="10" fill="#0f172a" />
-                <rect x="19" y="8" width="7" height="29" rx="2.5" fill="#22c55e" />
-                <rect x="8" y="19" width="29" height="7" rx="2.5" fill="#22c55e" />
-                <path d="M11 22 H16 L18 17 L21 27 L24 22 H29" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" />
-                <circle cx="39" cy="8" r="3.5" fill="#22c55e" stroke="#ffffff" stroke-width="1.5" />
-                <text x="56" y="27" font-family="sans-serif" font-size="20" font-weight="800" fill="#0f172a">IM <tspan font-weight="900" fill="#1e3a8a">MEDICOS</tspan><tspan fill="#22c55e">.</tspan></text>
-                <text x="57" y="40" font-family="sans-serif" font-size="7.5" font-weight="700" fill="#64748b" letter-spacing="1">MEDICAL BILLING SOFTWARE</text>
-              </svg>
+            <!-- Left: Logo Block -->
+            <div class="header-col-left">
+              ${logoBlockHtml}
+              ${taglineHtml}
             </div>
-            
-            <div class="store-info">
-              <div class="store-title">${store.storeName}</div>
-              ${store.address ? `<div class="store-sub">${store.address}</div>` : ""}
-              <div class="store-contact">
-                ${store.phone ? `<span>Ph: ${store.phone}</span>` : ""}
-                ${store.email ? `<span>Email: ${store.email}</span>` : ""}
-              </div>
-              <div class="store-licenses">
-                ${store.showGstin && store.gstin ? `<span class="badge">GSTIN: ${store.gstin}</span>` : ""}
-                ${store.drugLicense1 ? `<span class="badge">DL 1: ${store.drugLicense1}</span>` : ""}
-                ${store.drugLicense2 ? `<span class="badge">DL 2: ${store.drugLicense2}</span>` : ""}
-              </div>
+
+            <!-- Vertical Divider 1 -->
+            <div class="divider-v"></div>
+
+            <!-- Middle: Licenses -->
+            <div class="header-col-mid">
+              ${licensesHtml}
+            </div>
+
+            <!-- Vertical Divider 2 -->
+            <div class="divider-v"></div>
+
+            <!-- Right: Contact -->
+            <div class="header-col-right">
+              ${contactHtml}
             </div>
           </div>
 
-          <!-- Title bar -->
-          <div class="title-bar">
-            <span>ORIGINAL FOR RECIPIENT</span>
-            <span style="font-size: 11.5px; font-weight: 900; letter-spacing: 1.5px;">TAX INVOICE / PHARMACY BILL</span>
-            <span>Page ${p + 1} of ${totalPages}</span>
+          <!-- Header Navy Underline -->
+          <div class="header-line"></div>
+
+          <!-- Title Pill -->
+          <div class="title-pill-wrap">
+            <span class="title-pill">TAX INVOICE / PHARMACY BILL</span>
           </div>
 
-          <!-- Patient & Invoice Meta -->
-          <div class="meta-grid">
-            <div>
-              <div><span class="meta-label">Bill No.:</span> <span style="font-weight: 800; font-family: monospace;">${bill.billNumber}</span></div>
-              <div><span class="meta-label">Date:</span> <span>${bill.billDate}</span></div>
-              <div><span class="meta-label">Payment:</span> <b>${bill.paymentMode}</b></div>
+          <!-- Underline Meta Rows -->
+          <div class="meta-section">
+            <div class="meta-col">
+              <div class="meta-row">
+                <span class="meta-lbl" style="width: 75px;">Bill No. :</span>
+                <span class="meta-val" style="font-weight: bold;">${bill.billNumber}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-lbl" style="width: 75px;">Date :</span>
+                <span class="meta-val">
+                  ${formatDisplayDate(bill.billDate)}
+                  <span style="margin-left: 10px; font-size: 9.5px; font-weight: normal; color: #64748b;">(Mode: ${bill.paymentMode})</span>
+                </span>
+              </div>
             </div>
-            <div>
-              <div><span class="meta-label">Patient Name:</span> <b>${bill.customerName}</b></div>
-              <div><span class="meta-label">Mobile:</span> <span style="font-family: monospace;">+91 ${bill.customerMobile}</span></div>
-              <div><span class="meta-label">Doctor Name:</span> <span>${bill.doctorName ? `Dr. ${bill.doctorName.replace(/^Dr\.?\s*/i, "")}` : "—"}</span></div>
+
+            <div class="meta-col">
+              <div class="meta-row">
+                <span class="meta-lbl" style="width: 150px;">Patient / Customer Name :</span>
+                <span class="meta-val" style="font-weight: bold;">${bill.customerName}</span>
+              </div>
+              ${
+                bill.customerMobile
+                  ? `<div style="font-size: 9.5px; color: #64748b; padding-left: 150px; margin-top: -2px; margin-bottom: 2px;">Mobile: +91 ${bill.customerMobile}</div>`
+                  : ""
+              }
+              <div class="meta-row">
+                <span class="meta-lbl" style="width: 150px;">Doctor Name :</span>
+                <span class="meta-val">${bill.doctorName ? `Dr. ${bill.doctorName.replace(/^Dr\.?\s*/i, "")}` : "________________________"}</span>
+              </div>
             </div>
           </div>
 
@@ -160,196 +343,176 @@ export function generateInvoiceHtml(bill: BillRecord): string {
           <table class="items-table">
             <thead>
               <tr>
-                <th style="width: 30px; text-align: center;">S.No.</th>
-                <th>Medicine Name</th>
-                <th style="width: 90px;">Batch No.</th>
-                <th style="width: 65px; text-align: center;">Expiry</th>
-                <th style="width: 45px; text-align: center;">Qty.</th>
-                <th style="width: 65px; text-align: right;">MRP (₹)</th>
-                <th style="width: 65px; text-align: right;">Rate (₹)</th>
-                <th style="width: 75px; text-align: right;">Amount (₹)</th>
+                <th style="width: 5%; text-align: center;">S.No.</th>
+                <th style="width: 37%; text-align: left;">Medicine Name</th>
+                <th style="width: 14%; text-align: left;">Batch No.</th>
+                <th style="width: 10%; text-align: center;">Expiry</th>
+                <th style="width: 6%; text-align: center;">Qty.</th>
+                <th style="width: 9%; text-align: right;">MRP (Rs)</th>
+                <th style="width: 9%; text-align: right;">Rate (Rs)</th>
+                <th style="width: 10%; text-align: right;">Amount (Rs)</th>
               </tr>
             </thead>
             <tbody>
               ${rowsHtml}
             </tbody>
           </table>
-        </div>
 
-        <div>
-          ${totalsHtml}
+          <!-- Bottom Section -->
+          ${bottomHtml}
 
-          <!-- Footer -->
-          <div class="footer">
-            <div style="width: 65%;">
-              <div style="font-weight: bold; color: #0f172a; font-size: 10.5px;">Thank you for choosing I M Medicos</div>
-              <div style="color: #475569; font-style: italic; font-size: 9.5px;">Please take medicines as directed by the Physician.</div>
-              <div style="margin-top: 4px;">
-                <div style="font-weight: bold; font-size: 9px; color: #475569; text-transform: uppercase;">Terms &amp; Conditions:</div>
-                <ul style="margin: 2px 0 0 14px; padding: 0; font-size: 8.5px; color: #64748b;">
-                  ${termsBullets.map((b) => `<li>${b.replace(/^\d+[\.\)]\s*/, "")}</li>`).join("")}
-                </ul>
-              </div>
-            </div>
-
-            <div style="width: 32%; text-align: right;">
-              <div style="font-size: 9.5px; color: #475569;">For <b>${store.storeName}</b></div>
-              <div style="margin-top: 36px; border-top: 1px solid #94a3b8; font-weight: bold; font-size: 9.5px; display: inline-block; min-width: 130px; text-align: center;">
-                Authorised Signatory
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     `;
-  }
+  });
 
   return `
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
       <meta charset="utf-8" />
       <title>Invoice - ${bill.billNumber}</title>
       <style>
-        @page {
-          size: A4 portrait;
-          margin: 6mm;
-        }
         * {
           box-sizing: border-box;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
         }
         body {
           margin: 0;
           padding: 0;
-          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+          background: #ffffff;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
           color: #0f172a;
-          background: #f1f5f9;
-          -webkit-print-color-adjust: exact;
-          print-color-adjust: exact;
         }
         .a4-page {
           width: 210mm;
-          min-height: 297mm;
-          height: 297mm;
-          margin: 0 auto 10px auto;
-          padding: 10mm;
+          max-width: 210mm;
+          margin: 0 auto;
+          padding: 6mm;
           background: #ffffff;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          page-break-after: always;
-          break-after: page;
+          box-sizing: border-box;
         }
-        @media print {
-          body {
-            background: #ffffff;
-          }
-          .a4-page {
-            margin: 0;
-            padding: 8mm;
-            border: none;
-            box-shadow: none;
-          }
+        .page-border-container {
+          border: 1.5px solid #0b3a73;
+          padding: 6mm;
+          box-sizing: border-box;
+          background: #ffffff;
         }
         .header {
           display: flex;
           justify-content: space-between;
-          align-items: flex-start;
-          border-bottom: 2px solid #0f172a;
+          align-items: center;
           padding-bottom: 8px;
         }
-        .store-info {
-          text-align: right;
-          max-width: 55%;
-        }
-        .store-title {
-          font-size: 15px;
-          font-weight: 900;
-          color: #0f172a;
-        }
-        .store-sub {
-          font-size: 10px;
-          color: #475569;
-          margin-top: 1px;
-        }
-        .store-contact {
-          font-size: 10px;
-          color: #334155;
-          margin-top: 2px;
+        .header-col-left {
+          width: 36%;
+          min-height: 48px;
           display: flex;
-          justify-content: flex-end;
-          gap: 8px;
+          flex-direction: column;
+          justify-content: center;
+          padding-right: 8px;
         }
-        .store-licenses {
-          font-size: 9.5px;
-          margin-top: 3px;
-          display: flex;
-          justify-content: flex-end;
-          gap: 6px;
+        .header-col-mid {
+          width: 28%;
+          padding: 0 10px;
+          font-size: 10.5px;
         }
-        .badge {
-          background: #f1f5f9;
-          border: 1px solid #cbd5e1;
-          padding: 1px 4px;
-          border-radius: 3px;
-          font-weight: 600;
+        .header-col-right {
+          width: 34%;
+          padding-left: 10px;
+          font-size: 10px;
         }
-        .title-bar {
-          background: #0f172a;
+        .divider-v {
+          width: 1px;
+          background: #0b3a73;
+          align-self: stretch;
+          margin: 2px 0;
+        }
+        .header-line {
+          width: 100%;
+          height: 2px;
+          background: #0b3a73;
+        }
+        .title-pill-wrap {
+          text-align: center;
+          margin: 8px 0;
+        }
+        .title-pill {
+          display: inline-block;
+          background: #0b3a73;
           color: #ffffff;
-          padding: 3px 10px;
-          margin-top: 8px;
+          padding: 3px 20px;
+          border-radius: 9999px;
+          font-weight: bold;
+          font-size: 10.5px;
+          letter-spacing: 0.8px;
+          text-transform: uppercase;
+        }
+        .meta-section {
           display: flex;
           justify-content: space-between;
-          align-items: center;
-          font-size: 9.5px;
-          font-weight: 700;
-          border-radius: 2px;
-        }
-        .meta-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 12px;
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
-          border-radius: 4px;
-          padding: 6px 10px;
-          margin-top: 8px;
+          margin-bottom: 8px;
           font-size: 11px;
         }
-        .meta-label {
-          color: #64748b;
-          font-weight: 600;
-          display: inline-block;
-          width: 85px;
+        .meta-col {
+          width: 48%;
+        }
+        .meta-row {
+          display: flex;
+          align-items: baseline;
+          margin-bottom: 4px;
+        }
+        .meta-lbl {
+          font-weight: bold;
+          color: #0b3a73;
+          flex-shrink: 0;
+        }
+        .meta-val {
+          border-bottom: 1px solid #94a3b8;
+          color: #0f172a;
+          padding-bottom: 1px;
+          flex-grow: 1;
         }
         .items-table {
           width: 100%;
           border-collapse: collapse;
-          margin-top: 8px;
-          font-size: 10.5px;
+          font-size: 10px;
         }
         .items-table th {
-          background: #1e293b;
+          background: #0b3a73;
           color: #ffffff;
-          font-weight: 700;
-          text-align: left;
-          padding: 5px 6px;
-          border: 1px solid #334155;
+          font-weight: bold;
+          padding: 4px 6px;
+          border: 1px solid #cbd5e1;
         }
         .items-table td {
-          padding: 3.5px 6px;
-          border: 1px solid #e2e8f0;
+          padding: 4px 6px;
+          border: 1px solid #cbd5e1;
         }
-        .blank-row td {
-          padding: 6px;
+        tr {
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
-        .footer {
-          border-top: 1px solid #cbd5e1;
-          padding-top: 8px;
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-end;
+        @media print {
+          @page {
+            size: A4 portrait;
+            margin: 4mm;
+          }
+          body {
+            background: #ffffff;
+          }
+          .a4-page {
+            width: 100% !important;
+            max-width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+          }
+          .page-break {
+            page-break-after: always;
+            break-after: page;
+          }
         }
       </style>
     </head>
