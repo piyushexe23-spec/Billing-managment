@@ -1,12 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { MedicineWithBatches, AddNewBatchInput } from "@/types/medicine";
-import { medicineService, getLocalTodayStr } from "@/services/medicineService";
+import { medicineService, parseFieldError } from "@/services/medicineService";
+import {
+  validateBatchFields,
+  MedicineValidationErrors,
+  PriceWarnings,
+} from "@/lib/medicineValidations";
 import {
   X,
   AlertTriangle,
   AlertCircle,
   PackagePlus,
   Loader2,
+  Calendar,
+  IndianRupee,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,10 +45,10 @@ export const AddNewBatchModal: React.FC<AddNewBatchModalProps> = ({
   const [note, setNote] = useState("");
 
   // Validation & Warning States
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<MedicineValidationErrors>({});
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
-  const [activeWarnings, setActiveWarnings] = useState<string[]>([]);
-  const [warningConfirmed, setWarningConfirmed] = useState(false);
+  const [priceWarnings, setPriceWarnings] = useState<PriceWarnings>({});
+  const [showWarningModal, setShowWarningModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Fetch medicine details and pre-fill prices from the latest batch
@@ -49,14 +57,14 @@ export const AddNewBatchModal: React.FC<AddNewBatchModalProps> = ({
     async function loadMedicine() {
       if (!medicineId) return;
       try {
-        setError(null);
+        setErrors({});
         setDuplicateWarning(null);
-        setActiveWarnings([]);
-        setWarningConfirmed(false);
+        setPriceWarnings({});
+        setShowWarningModal(false);
         const med = await medicineService.getMedicineById(medicineId);
         if (isMounted && med) {
           setMedicine(med);
-          // Find latest batch by id/created_at to prefill pricing
+          // Find latest batch by id to prefill pricing
           if (med.batches && med.batches.length > 0) {
             const sorted = [...med.batches].sort((a, b) => b.id - a.id);
             const latest = sorted[0];
@@ -76,7 +84,6 @@ export const AddNewBatchModal: React.FC<AddNewBatchModalProps> = ({
         }
       } catch (err) {
         console.error("Failed to load medicine for adding batch:", err);
-        if (isMounted) setError("Failed to load medicine details.");
       }
     }
 
@@ -90,101 +97,76 @@ export const AddNewBatchModal: React.FC<AddNewBatchModalProps> = ({
 
   if (!isOpen || !medicineId) return null;
 
-  // Real-time duplicate check when user changes batchNumber
-  const handleBatchNumberChange = (val: string) => {
-    setBatchNumber(val);
-    setDuplicateWarning(null);
-    setError(null);
-    if (medicine && val.trim()) {
-      const exists = medicine.batches.some(
-        (b) => b.batchNumber.toLowerCase() === val.trim().toLowerCase()
-      );
-      if (exists) {
-        setDuplicateWarning(
-          `Batch "${val.trim().toUpperCase()}" already exists for this medicine.`
-        );
-      }
+  const focusFirstInvalidField = (errs: MedicineValidationErrors) => {
+    const FIELD_ORDER = [
+      "batchNumber",
+      "mfgDate",
+      "expDate",
+      "quantityReceived",
+      "costPrice",
+      "mrp",
+      "sellingPrice",
+    ];
+    const firstInvalid = FIELD_ORDER.find((f) => errs[f as keyof MedicineValidationErrors]);
+    if (firstInvalid) {
+      setTimeout(() => {
+        const el = document.getElementById(`add-batch-${firstInvalid}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.focus();
+        }
+      }, 50);
     }
-  };
-
-  const validateAndCollectWarnings = (): { valid: boolean; warnings: string[] } => {
-    if (!batchNumber.trim()) {
-      setError("Batch number is required.");
-      return { valid: false, warnings: [] };
-    }
-    if (!expDate.trim()) {
-      setError("Expiry date is required.");
-      return { valid: false, warnings: [] };
-    }
-    if (mfgDate.trim() && expDate.trim() < mfgDate.trim()) {
-      setError("Expiry date cannot be earlier than manufacturing date.");
-      return { valid: false, warnings: [] };
-    }
-    if (quantityReceived === "" || Number(quantityReceived) <= 0) {
-      setError("Quantity received must be a positive integer greater than zero.");
-      return { valid: false, warnings: [] };
-    }
-    if (costPrice === "" || Number(costPrice) < 0) {
-      setError("Valid purchase / cost price is required.");
-      return { valid: false, warnings: [] };
-    }
-    if (mrp === "" || Number(mrp) < 0) {
-      setError("Valid MRP is required.");
-      return { valid: false, warnings: [] };
-    }
-    if (sellingPrice === "" || Number(sellingPrice) < 0) {
-      setError("Valid selling price is required.");
-      return { valid: false, warnings: [] };
-    }
-
-    // Collect reviewable financial & expiry warnings
-    const warnings: string[] = [];
-    const today = getLocalTodayStr();
-    if (expDate.trim() < today) {
-      warnings.push("The entered expiry date is already in the past (expired stock).");
-    }
-    if (Number(sellingPrice) > Number(mrp)) {
-      warnings.push(
-        `Selling price (₹${sellingPrice}) is greater than Maximum Retail Price (MRP ₹${mrp}). Drug Price Control regulations typically require selling price <= MRP.`
-      );
-    }
-    if (Number(sellingPrice) < Number(costPrice)) {
-      warnings.push(
-        `Selling price (₹${sellingPrice}) is lower than purchase cost price (₹${costPrice}) resulting in negative unit profit margin.`
-      );
-    }
-
-    return { valid: true, warnings };
   };
 
   const handleSave = async (addToExisting = false) => {
-    setError(null);
-    const { valid, warnings } = validateAndCollectWarnings();
-    if (!valid) return;
+    // 1. Run validation
+    const validation = validateBatchFields({
+      batchNumber,
+      mfgDate,
+      expDate,
+      quantityReceived,
+      costPrice,
+      mrp,
+      sellingPrice,
+    });
 
-    // Check duplicate batch if not explicitly adding to existing
-    if (!addToExisting && medicine) {
-      const exists = medicine.batches.some(
-        (b) => b.batchNumber.toLowerCase() === batchNumber.trim().toLowerCase()
+    // 2. Duplicate batch check for this medicine
+    if (batchNumber.trim() && medicine && !addToExisting) {
+      const normBatch = batchNumber.trim().toLowerCase();
+      const duplicateExists = medicine.batches.some(
+        (b) => b.isActive && b.batchNumber.trim().toLowerCase() === normBatch
       );
-      if (exists) {
+      if (duplicateExists) {
+        validation.errors.batchNumber = "This batch number already exists for this medicine.";
+        validation.isValid = false;
         setDuplicateWarning(
-          `Batch "${batchNumber.trim().toUpperCase()}" already exists for this medicine.`
+          `This batch already exists. Add stock to the existing batch instead?`
         );
-        return;
       }
     }
 
-    // If warnings exist and user has not confirmed them yet, pause and prompt
-    if (warnings.length > 0 && !warningConfirmed) {
-      setActiveWarnings(warnings);
+    if (!validation.isValid) {
+      setErrors(validation.errors);
+      setPriceWarnings(validation.warnings);
+      focusFirstInvalidField(validation.errors);
+      return;
+    }
+
+    setErrors({});
+    setPriceWarnings(validation.warnings);
+
+    // If pricing warnings exist, let user review & confirm
+    if (
+      !showWarningModal &&
+      (validation.warnings.sellingPriceExceedsMrp || validation.warnings.sellingPriceBelowCost)
+    ) {
+      setShowWarningModal(true);
       return;
     }
 
     try {
       setIsSubmitting(true);
-      setError(null);
-
       const input: AddNewBatchInput = {
         medicineId,
         batchNumber: batchNumber.trim().toUpperCase(),
@@ -202,12 +184,16 @@ export const AddNewBatchModal: React.FC<AddNewBatchModalProps> = ({
       await onSuccess();
       onClose();
     } catch (err: any) {
-      if (err?.message?.includes("BATCH_ALREADY_EXISTS")) {
-        setDuplicateWarning(
-          `Batch "${batchNumber.trim().toUpperCase()}" already exists for this medicine.`
-        );
+      const parsed = parseFieldError(err);
+      if (parsed.field) {
+        const updatedErrors = { ...errors, [parsed.field]: parsed.message };
+        setErrors(updatedErrors);
+        focusFirstInvalidField(updatedErrors);
       } else {
-        setError(err instanceof Error ? err.message : "Failed to record new batch.");
+        setErrors((prev) => ({
+          ...prev,
+          general: parsed.message || "Failed to add batch.",
+        }));
       }
     } finally {
       setIsSubmitting(false);
@@ -216,18 +202,73 @@ export const AddNewBatchModal: React.FC<AddNewBatchModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-medical-navy-950/70 backdrop-blur-xs animate-in fade-in-50">
-      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-medical-slate-200 flex flex-col overflow-hidden max-h-[92vh]">
+      {/* Price Review Warning Dialog */}
+      {showWarningModal && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/60">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-amber-300 p-6 space-y-4 animate-in zoom-in-95">
+            <div className="flex items-center gap-3 text-amber-700">
+              <div className="p-2.5 rounded-xl bg-amber-100">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-base text-medical-navy-950">
+                  Price Anomaly Warning
+                </h3>
+                <p className="text-xs text-medical-slate-500">
+                  Please review the entered batch pricing before saving.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 leading-relaxed space-y-1">
+              <p className="font-semibold">{priceWarnings.sellingPriceWarning || "Please review the batch prices."}</p>
+              <p className="text-[11px] text-amber-700">
+                Are you sure you want to proceed with this pricing configuration?
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowWarningModal(false)}
+                className="text-xs font-semibold cursor-pointer"
+              >
+                Go Back & Adjust
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  setShowWarningModal(false);
+                  handleSave(false);
+                }}
+                disabled={isSubmitting}
+                className="text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                ) : null}
+                Confirm & Save Batch
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-medical-slate-200 flex flex-col max-h-[90vh] overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-medical-slate-200 bg-medical-slate-50/70">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-medical-slate-200 bg-medical-slate-50/70 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="p-2 rounded-xl bg-medical-navy-900 text-white">
-              <PackagePlus className="w-5 h-5" />
+              <PackagePlus className="w-4 h-4" />
             </div>
             <div>
               <h3 className="text-base font-bold text-medical-navy-950">
                 Add New Batch
               </h3>
-              <p className="text-xs text-medical-slate-500 truncate max-w-sm">
+              <p className="text-xs text-medical-slate-500">
                 Receive new stock delivery into inventory
               </p>
             </div>
@@ -242,7 +283,7 @@ export const AddNewBatchModal: React.FC<AddNewBatchModalProps> = ({
         </div>
 
         {/* Read-Only Medicine Master Summary Card */}
-        <div className="px-6 py-3 bg-medical-slate-100/70 border-b border-medical-slate-200 flex items-center justify-between text-xs">
+        <div className="px-6 py-3 bg-medical-slate-100/70 border-b border-medical-slate-200 flex items-center justify-between text-xs shrink-0">
           <div>
             <span className="text-[10px] uppercase font-bold text-medical-slate-400 block tracking-wider">
               Medicine (Master)
@@ -260,261 +301,297 @@ export const AddNewBatchModal: React.FC<AddNewBatchModalProps> = ({
             <span className="text-[10px] uppercase font-bold text-medical-slate-400 block tracking-wider">
               Unit
             </span>
-            <span className="inline-block px-2 py-0.5 rounded-full bg-white border border-medical-slate-200 font-bold text-medical-navy-900 text-[11px]">
-              {medicine?.unit || "Tablet"}
+            <span className="font-bold text-medical-navy-950 text-sm">
+              {medicine?.unit || "Unit"}
             </span>
           </div>
         </div>
 
-        {/* Form Body */}
-        <div className="p-6 overflow-y-auto space-y-4 text-xs">
-          {/* Error Banner */}
-          {error && (
-            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 flex items-center gap-2 text-xs font-semibold">
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-              <span>{error}</span>
+        {/* Scrollable Form Body */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSave(false);
+          }}
+          className="p-6 space-y-4 overflow-y-auto text-xs"
+        >
+          {errors.general && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+              <span>{errors.general}</span>
             </div>
           )}
 
-          {/* Duplicate Batch Warning Flow */}
+          {/* Duplicate Batch Warning Banner with Option to Add Stock to Existing */}
           {duplicateWarning && (
             <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 space-y-2">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold">{duplicateWarning}</p>
-                  <p className="text-[11px] text-amber-800 mt-0.5">
-                    This batch number already exists for this medicine. Do you want to add this quantity to the existing batch instead?
-                  </p>
-                </div>
+              <div className="flex items-center gap-2 font-semibold">
+                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>{duplicateWarning}</span>
               </div>
-              <div className="flex items-center gap-2 pt-1 pl-6">
+              <div className="flex items-center gap-2 pt-1">
                 <Button
                   type="button"
                   size="sm"
                   onClick={() => handleSave(true)}
                   disabled={isSubmitting}
-                  className="h-7 text-xs font-bold bg-amber-700 hover:bg-amber-800 text-white cursor-pointer"
+                  className="h-8 px-3 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
                 >
+                  {isSubmitting ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                  ) : null}
                   Add Stock to Existing Batch
                 </Button>
-                <button
-                  type="button"
-                  onClick={() => setDuplicateWarning(null)}
-                  className="text-xs text-amber-900 hover:underline font-semibold cursor-pointer"
-                >
-                  Change Batch Number
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Reviewable Warnings Alert (DPCO MRP, Below Cost, Past Expiry) */}
-          {activeWarnings.length > 0 && !warningConfirmed && (
-            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 space-y-2">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <p className="font-bold text-amber-950">
-                    Please Review Financial &amp; Expiry Warnings:
-                  </p>
-                  <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-amber-900">
-                    {activeWarnings.map((w, idx) => (
-                      <li key={idx}>{w}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 pt-1 pl-6">
                 <Button
                   type="button"
+                  variant="outline"
                   size="sm"
                   onClick={() => {
-                    setWarningConfirmed(true);
-                    setActiveWarnings([]);
+                    setDuplicateWarning(null);
+                    setBatchNumber("");
+                    setErrors((p) => ({ ...p, batchNumber: undefined }));
                   }}
-                  className="h-7 text-xs font-bold bg-amber-700 hover:bg-amber-800 text-white cursor-pointer"
+                  className="h-8 px-3 text-xs font-semibold border-amber-300 hover:bg-amber-100/60 text-amber-900 cursor-pointer"
                 >
-                  Confirm &amp; Proceed
+                  Change Batch Number
                 </Button>
-                <button
-                  type="button"
-                  onClick={() => setActiveWarnings([])}
-                  className="text-xs text-amber-900 hover:underline font-semibold cursor-pointer"
-                >
-                  Review Form Values
-                </button>
               </div>
             </div>
           )}
 
-          {/* Batch Number & Quantity */}
+          {/* Row 1: Batch Number & Quantity */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="font-bold text-medical-slate-800">
+              <label className="font-bold text-medical-slate-800" htmlFor="add-batch-batchNumber">
                 Batch Number <span className="text-red-500">*</span>
               </label>
               <Input
+                id="add-batch-batchNumber"
                 type="text"
                 value={batchNumber}
-                onChange={(e) => handleBatchNumberChange(e.target.value)}
-                placeholder="e.g. DL-010"
-                className="font-sans uppercase text-xs h-9"
+                onChange={(e) => {
+                  setBatchNumber(e.target.value.toUpperCase());
+                  if (errors.batchNumber) {
+                    setErrors((p) => ({ ...p, batchNumber: undefined }));
+                    setDuplicateWarning(null);
+                  }
+                }}
+                placeholder="e.g. DL-650-B1"
+                error={!!errors.batchNumber}
+                className="font-mono uppercase text-xs h-9 font-semibold"
                 autoFocus
               />
+              {errors.batchNumber && (
+                <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{errors.batchNumber}</span>
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-bold text-medical-slate-800">
-                Quantity Received <span className="text-red-500">*</span>
+              <label className="font-bold text-medical-slate-800" htmlFor="add-batch-quantityReceived">
+                Quantity Received ({medicine?.unit || "Units"}) <span className="text-red-500">*</span>
               </label>
-              <div className="relative">
-                <Input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={quantityReceived}
-                  onChange={(e) => {
-                    const val = e.target.value === "" ? "" : parseInt(e.target.value, 10);
-                    setQuantityReceived(val);
-                    if (error) setError(null);
-                  }}
-                  placeholder="e.g. 100"
-                  className="font-sans tabular-nums text-xs h-9 pr-14"
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-medical-slate-400 font-medium text-[11px] pointer-events-none">
-                  {medicine?.unit || "Unit"}s
-                </span>
-              </div>
+              <Input
+                id="add-batch-quantityReceived"
+                type="number"
+                min={1}
+                step={1}
+                value={quantityReceived}
+                onChange={(e) => {
+                  const val = e.target.value === "" ? "" : parseInt(e.target.value, 10);
+                  setQuantityReceived(val);
+                  if (errors.quantityReceived) setErrors((p) => ({ ...p, quantityReceived: undefined }));
+                }}
+                placeholder="e.g. 50"
+                error={!!errors.quantityReceived}
+                className="font-mono text-xs h-9 font-bold"
+              />
+              {errors.quantityReceived && (
+                <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{errors.quantityReceived}</span>
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Dates: Manufacturing & Expiry */}
+          {/* Row 2: Dates */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="font-bold text-medical-slate-800 flex items-center justify-between">
-                <span>Mfg Date</span>
-                <span className="text-medical-slate-400 font-normal text-[10px]">Optional</span>
+              <label className="font-bold text-medical-slate-800 flex items-center gap-1" htmlFor="add-batch-mfgDate">
+                <Calendar className="w-3.5 h-3.5 text-medical-slate-400" />
+                Manufacturing Date (Optional)
               </label>
               <Input
+                id="add-batch-mfgDate"
                 type="date"
                 value={mfgDate}
-                onChange={(e) => setMfgDate(e.target.value)}
-                className="font-sans tabular-nums text-xs h-9"
+                onChange={(e) => {
+                  setMfgDate(e.target.value);
+                  if (errors.mfgDate) setErrors((p) => ({ ...p, mfgDate: undefined }));
+                }}
+                error={!!errors.mfgDate}
+                className="text-xs h-9"
               />
+              {errors.mfgDate && (
+                <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{errors.mfgDate}</span>
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5">
-              <label className="font-bold text-medical-slate-800">
+              <label className="font-bold text-medical-slate-800 flex items-center gap-1" htmlFor="add-batch-expDate">
+                <Calendar className="w-3.5 h-3.5 text-medical-slate-400" />
                 Expiry Date <span className="text-red-500">*</span>
               </label>
               <Input
+                id="add-batch-expDate"
                 type="date"
                 value={expDate}
                 onChange={(e) => {
                   setExpDate(e.target.value);
-                  if (error) setError(null);
+                  if (errors.expDate) setErrors((p) => ({ ...p, expDate: undefined }));
+                  if (errors.mfgDate && mfgDate && e.target.value >= mfgDate) {
+                    setErrors((p) => ({ ...p, mfgDate: undefined }));
+                  }
                 }}
-                className="font-sans tabular-nums text-xs h-9"
+                error={!!errors.expDate}
+                className="text-xs h-9"
               />
+              {errors.expDate && (
+                <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{errors.expDate}</span>
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Pricing Row: Purchase Cost, MRP, Selling Price (Pre-filled from latest batch) */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="font-bold text-medical-slate-800">
-                Batch Pricing &amp; Margin
+          {/* Pricing Header */}
+          <div className="pt-2 border-t border-medical-slate-100 flex items-center gap-2 text-medical-navy-900 font-bold text-xs uppercase tracking-wider">
+            <Layers className="w-3.5 h-3.5 text-medical-navy-600" />
+            Pricing Configuration (Pre-Filled From Latest Batch)
+          </div>
+
+          {/* Row 3: Prices */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="space-y-1.5">
+              <label className="font-bold text-medical-slate-800 flex items-center gap-1" htmlFor="add-batch-costPrice">
+                <IndianRupee className="w-3.5 h-3.5 text-medical-slate-400" />
+                Purchase / Cost (₹) <span className="text-red-500">*</span>
               </label>
-              <span className="text-[10px] text-medical-slate-500">
-                Pre-filled from latest batch (editable)
-              </span>
+              <Input
+                id="add-batch-costPrice"
+                type="number"
+                min={0}
+                step="0.01"
+                value={costPrice}
+                onChange={(e) => {
+                  const val = e.target.value === "" ? "" : parseFloat(e.target.value);
+                  setCostPrice(val);
+                  if (errors.costPrice) setErrors((p) => ({ ...p, costPrice: undefined }));
+                }}
+                placeholder="0.00"
+                error={!!errors.costPrice}
+                className="font-mono text-xs h-9"
+              />
+              {errors.costPrice && (
+                <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{errors.costPrice}</span>
+                </p>
+              )}
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              {/* Cost Price */}
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold text-medical-slate-500 block">
-                  Purchase Cost (₹) <span className="text-red-500">*</span>
-                </span>
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={costPrice}
-                  onChange={(e) => {
-                    const val = e.target.value === "" ? "" : parseFloat(e.target.value);
-                    setCostPrice(val);
-                    if (error) setError(null);
-                  }}
-                  placeholder="0.00"
-                  className="font-sans tabular-nums text-xs h-9"
-                />
-              </div>
 
-              {/* MRP */}
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold text-medical-slate-500 block">
-                  MRP (₹) <span className="text-red-500">*</span>
-                </span>
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={mrp}
-                  onChange={(e) => {
-                    const val = e.target.value === "" ? "" : parseFloat(e.target.value);
-                    setMrp(val);
-                    if (error) setError(null);
-                  }}
-                  placeholder="0.00"
-                  className="font-sans tabular-nums text-xs h-9 font-semibold"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <label className="font-bold text-medical-slate-800 flex items-center gap-1" htmlFor="add-batch-mrp">
+                <IndianRupee className="w-3.5 h-3.5 text-medical-slate-400" />
+                MRP (₹) <span className="text-red-500">*</span>
+              </label>
+              <Input
+                id="add-batch-mrp"
+                type="number"
+                min={0}
+                step="0.01"
+                value={mrp}
+                onChange={(e) => {
+                  const val = e.target.value === "" ? "" : parseFloat(e.target.value);
+                  setMrp(val);
+                  if (errors.mrp) setErrors((p) => ({ ...p, mrp: undefined }));
+                }}
+                placeholder="0.00"
+                error={!!errors.mrp}
+                className="font-mono text-xs h-9 font-bold"
+              />
+              {errors.mrp && (
+                <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{errors.mrp}</span>
+                </p>
+              )}
+            </div>
 
-              {/* Selling Price */}
-              <div className="space-y-1">
-                <span className="text-[10px] uppercase font-bold text-medical-slate-500 block">
-                  Selling Price (₹) <span className="text-red-500">*</span>
-                </span>
-                <Input
-                  type="number"
-                  min={0}
-                  step={0.01}
-                  value={sellingPrice}
-                  onChange={(e) => {
-                    const val = e.target.value === "" ? "" : parseFloat(e.target.value);
-                    setSellingPrice(val);
-                    if (error) setError(null);
-                  }}
-                  placeholder="0.00"
-                  className="font-sans tabular-nums text-xs h-9 font-bold text-medical-green-700"
-                />
-              </div>
+            <div className="space-y-1.5">
+              <label className="font-bold text-medical-slate-800 flex items-center gap-1" htmlFor="add-batch-sellingPrice">
+                <IndianRupee className="w-3.5 h-3.5 text-medical-slate-400" />
+                Selling Price (₹) <span className="text-red-500">*</span>
+              </label>
+              <Input
+                id="add-batch-sellingPrice"
+                type="number"
+                min={0}
+                step="0.01"
+                value={sellingPrice}
+                onChange={(e) => {
+                  const val = e.target.value === "" ? "" : parseFloat(e.target.value);
+                  setSellingPrice(val);
+                  if (errors.sellingPrice) setErrors((p) => ({ ...p, sellingPrice: undefined }));
+                }}
+                placeholder="0.00"
+                error={!!errors.sellingPrice}
+                className="font-mono text-xs h-9 font-bold text-medical-green-800"
+              />
+              {errors.sellingPrice && (
+                <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1 mt-1">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{errors.sellingPrice}</span>
+                </p>
+              )}
+              {priceWarnings.sellingPriceExceedsMrp && (
+                <p className="text-amber-600 text-[11px] font-semibold flex items-center gap-1 mt-1">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  <span>Selling price is higher than MRP</span>
+                </p>
+              )}
+              {priceWarnings.sellingPriceBelowCost && (
+                <p className="text-amber-600 text-[11px] font-semibold flex items-center gap-1 mt-1">
+                  <AlertTriangle className="w-3 h-3 shrink-0" />
+                  <span>Selling price is below cost price</span>
+                </p>
+              )}
             </div>
           </div>
 
-          {/* Supplier Invoice Reference / Note */}
+          {/* Supplier Note / Reference */}
           <div className="space-y-1.5">
-            <label className="font-bold text-medical-slate-800 flex items-center justify-between">
-              <span>Supplier Invoice / Audit Note</span>
-              <span className="text-medical-slate-400 font-normal text-[10px]">Optional</span>
+            <label className="font-bold text-medical-slate-800">
+              Note / Supplier Invoice Reference (Optional)
             </label>
             <Input
               type="text"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="e.g. Inv #GSK-88912 or Apollo Wholesalers"
-              className="font-sans text-xs h-9"
+              placeholder="e.g. Inv #8942 / Apollo Wholesaler"
+              className="text-xs h-9"
             />
           </div>
-        </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-3.5 border-t border-medical-slate-200 bg-medical-slate-50/70 text-xs">
-          <span className="text-[11px] text-medical-slate-500">
-            Recorded transactionally into stock audit trail
-          </span>
-          <div className="flex items-center gap-2.5">
+          {/* Footer Actions */}
+          <div className="flex items-center justify-end gap-3 pt-4 border-t border-medical-slate-200">
             <Button
               type="button"
               variant="outline"
@@ -526,26 +603,20 @@ export const AddNewBatchModal: React.FC<AddNewBatchModalProps> = ({
               Cancel
             </Button>
             <Button
-              type="button"
+              type="submit"
               size="sm"
-              onClick={() => handleSave(false)}
               disabled={isSubmitting}
-              className="text-xs font-bold bg-medical-navy-900 hover:bg-medical-navy-800 text-white cursor-pointer px-4"
+              className="text-xs font-bold bg-medical-navy-900 hover:bg-medical-navy-800 text-white shadow-xs cursor-pointer"
             >
               {isSubmitting ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-                  Saving Batch...
-                </>
+                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
               ) : (
-                <>
-                  <PackagePlus className="w-3.5 h-3.5 mr-1.5" />
-                  Add Batch
-                </>
+                <PackagePlus className="w-3.5 h-3.5 mr-1.5" />
               )}
+              Save Batch Delivery
             </Button>
           </div>
-        </div>
+        </form>
       </div>
     </div>
   );

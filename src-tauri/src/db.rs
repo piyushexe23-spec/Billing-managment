@@ -163,6 +163,7 @@ fn create_tables(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_medicines_category ON medicines(category);
         CREATE INDEX IF NOT EXISTS idx_batches_med ON medicine_batches(medicine_id);
         CREATE INDEX IF NOT EXISTS idx_batches_exp ON medicine_batches(exp_date);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_medicine_batch ON medicine_batches(medicine_id, batch_number);
         CREATE INDEX IF NOT EXISTS idx_stock_movements_med ON stock_movements(medicine_id);
 
         -- Invoices / Bills Foundation (to be expanded in subsequent features)
@@ -468,7 +469,20 @@ pub fn migrate_medicine_tables(conn: &Connection) -> Result<()> {
         conn.execute("ALTER TABLE medicines ADD COLUMN updated_at DATETIME DEFAULT CURRENT_TIMESTAMP", [])?;
     }
 
+    conn.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_medicine_batch ON medicine_batches(medicine_id, batch_number);"
+    ).ok();
+
     Ok(())
+}
+
+/// Helper to construct JSON-serialized field-specific validation errors
+pub fn make_field_error(field: &str, message: &str) -> rusqlite::Error {
+    let json = serde_json::json!({
+        "field": field,
+        "message": message,
+    });
+    rusqlite::Error::UserFunctionError(json.to_string())
 }
 
 /// Cleans up any legacy hardcoded demo medicines so user starts with a clean inventory
@@ -632,12 +646,56 @@ pub fn insert_medicine_with_batch(
     low_stock_threshold: i64,
     batch: Option<&MedicineBatch>,
 ) -> Result<i64> {
+    if name.trim().is_empty() {
+        return Err(make_field_error("name", "Medicine name cannot be empty"));
+    }
+
+    // Check duplicate medicine (same name + manufacturer, case-insensitive, trimmed)
+    let duplicate_med_id: Option<i64> = conn.query_row(
+        "SELECT id FROM medicines WHERE LOWER(TRIM(name)) = LOWER(TRIM(?1)) AND LOWER(TRIM(COALESCE(manufacturer, ''))) = LOWER(TRIM(COALESCE(?2, ''))) AND is_active = 1",
+        params![name.trim(), manufacturer.map(|s| s.trim()).unwrap_or("")],
+        |row| row.get(0),
+    ).optional()?;
+
+    if duplicate_med_id.is_some() {
+        return Err(make_field_error("name", "This medicine already exists. Use Add New Batch on that medicine instead."));
+    }
+
+    if let Some(b) = batch {
+        if b.batch_number.trim().is_empty() {
+            return Err(make_field_error("batchNumber", "Batch number cannot be empty"));
+        }
+        if b.exp_date.trim().is_empty() {
+            return Err(make_field_error("expDate", "Expiry date is required"));
+        }
+        if b.exp_date.trim().len() != 10 {
+            return Err(make_field_error("expDate", "Enter a valid date"));
+        }
+        if let Some(mfg) = &b.mfg_date {
+            if !mfg.trim().is_empty() && b.exp_date.trim() < mfg.trim() {
+                return Err(make_field_error("mfgDate", "Manufacturing date cannot be after expiry date"));
+            }
+        }
+        if b.stock_qty < 1 {
+            return Err(make_field_error("stockQty", "Quantity must be at least 1"));
+        }
+        if b.cost_price < 0.0 {
+            return Err(make_field_error("costPrice", "Cost price cannot be negative"));
+        }
+        if b.mrp <= 0.0 {
+            return Err(make_field_error("mrp", "MRP must be greater than 0"));
+        }
+        if b.selling_price < 0.0 {
+            return Err(make_field_error("sellingPrice", "Selling price cannot be negative"));
+        }
+    }
+
     let tx = conn.transaction()?;
 
     tx.execute(
         r#"INSERT INTO medicines (name, generic_name, manufacturer, category, description, barcode, hsn_code, unit, low_stock_threshold, is_active, created_at, updated_at)
            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"#,
-        params![name, generic_name, manufacturer, category, description, barcode, hsn_code, unit, low_stock_threshold],
+        params![name.trim(), generic_name.map(|s| s.trim()), manufacturer.map(|s| s.trim()), category.map(|s| s.trim()), description.map(|s| s.trim()), barcode.map(|s| s.trim()), hsn_code.map(|s| s.trim()), unit.trim(), low_stock_threshold],
     )?;
 
     let medicine_id = tx.last_insert_rowid();
@@ -646,7 +704,7 @@ pub fn insert_medicine_with_batch(
         tx.execute(
             r#"INSERT INTO medicine_batches (medicine_id, batch_number, mfg_date, exp_date, cost_price, mrp, selling_price, stock_qty, is_active, created_at, updated_at)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"#,
-            params![medicine_id, b.batch_number, b.mfg_date, b.exp_date, b.cost_price, b.mrp, b.selling_price, b.stock_qty],
+            params![medicine_id, b.batch_number.trim().to_uppercase(), b.mfg_date.as_deref().map(|s| s.trim()), b.exp_date.trim(), b.cost_price, b.mrp, b.selling_price, b.stock_qty],
         )?;
 
         let batch_id = tx.last_insert_rowid();
@@ -734,11 +792,23 @@ pub fn adjust_batch_stock(
 /// Updates an existing medicine master info
 pub fn update_medicine(conn: &Connection, input: &MedicineMasterInput) -> Result<()> {
     if input.name.trim().is_empty() {
-        return Err(rusqlite::Error::UserFunctionError("Medicine name is required".into()));
+        return Err(make_field_error("name", "Medicine name cannot be empty"));
     }
     if input.low_stock_threshold < 0 {
-        return Err(rusqlite::Error::UserFunctionError("Low stock threshold cannot be negative".into()));
+        return Err(make_field_error("lowStockThreshold", "Low stock threshold cannot be negative"));
     }
+
+    // Duplicate medicine check excluding current medicine
+    let duplicate_id: Option<i64> = conn.query_row(
+        "SELECT id FROM medicines WHERE id != ?1 AND LOWER(TRIM(name)) = LOWER(TRIM(?2)) AND LOWER(TRIM(COALESCE(manufacturer, ''))) = LOWER(TRIM(COALESCE(?3, ''))) AND is_active = 1",
+        params![input.id, input.name.trim(), input.manufacturer.as_deref().unwrap_or("")],
+        |row| row.get(0),
+    ).optional()?;
+
+    if duplicate_id.is_some() {
+        return Err(make_field_error("name", "This medicine already exists. Use Add New Batch on that medicine instead."));
+    }
+
     conn.execute(
         r#"UPDATE medicines SET
             name = ?1,
@@ -783,21 +853,30 @@ pub fn add_or_increment_batch(
     add_to_existing: bool,
 ) -> Result<i64> {
     if batch_number.trim().is_empty() {
-        return Err(rusqlite::Error::UserFunctionError("Batch number is required".into()));
+        return Err(make_field_error("batchNumber", "Batch number cannot be empty"));
     }
     if exp_date.trim().is_empty() {
-        return Err(rusqlite::Error::UserFunctionError("Expiry date is required".into()));
+        return Err(make_field_error("expDate", "Expiry date is required"));
     }
-    if quantity_received <= 0 {
-        return Err(rusqlite::Error::UserFunctionError("Quantity received must be greater than zero".into()));
-    }
-    if cost_price < 0.0 || mrp < 0.0 || selling_price < 0.0 {
-        return Err(rusqlite::Error::UserFunctionError("Prices cannot be negative".into()));
+    if exp_date.trim().len() != 10 {
+        return Err(make_field_error("expDate", "Enter a valid date"));
     }
     if let Some(mfg) = mfg_date {
         if !mfg.trim().is_empty() && exp_date.trim() < mfg.trim() {
-            return Err(rusqlite::Error::UserFunctionError("Expiry date cannot be earlier than manufacturing date".into()));
+            return Err(make_field_error("mfgDate", "Manufacturing date cannot be after expiry date"));
         }
+    }
+    if quantity_received < 1 {
+        return Err(make_field_error("quantityReceived", "Quantity must be at least 1"));
+    }
+    if cost_price < 0.0 {
+        return Err(make_field_error("costPrice", "Cost price cannot be negative"));
+    }
+    if mrp <= 0.0 {
+        return Err(make_field_error("mrp", "MRP must be greater than 0"));
+    }
+    if selling_price < 0.0 {
+        return Err(make_field_error("sellingPrice", "Selling price cannot be negative"));
     }
 
     let tx = conn.transaction()?;
@@ -812,9 +891,7 @@ pub fn add_or_increment_batch(
     let (batch_id, prev_qty, new_qty) = match existing_batch {
         Some((id, current_stock)) => {
             if !add_to_existing {
-                return Err(rusqlite::Error::UserFunctionError(
-                    format!("BATCH_ALREADY_EXISTS:Batch '{}' already exists for this medicine.", batch_number.trim())
-                ));
+                return Err(make_field_error("batchNumber", "This batch number already exists for this medicine."));
             }
             let new_stock = current_stock + quantity_received;
             tx.execute(
@@ -878,19 +955,40 @@ pub fn update_batch_details(
     selling_price: f64,
 ) -> Result<()> {
     if batch_number.trim().is_empty() {
-        return Err(rusqlite::Error::UserFunctionError("Batch number is required".into()));
+        return Err(make_field_error("batchNumber", "Batch number cannot be empty"));
     }
     if exp_date.trim().is_empty() {
-        return Err(rusqlite::Error::UserFunctionError("Expiry date is required".into()));
+        return Err(make_field_error("expDate", "Expiry date is required"));
     }
-    if cost_price < 0.0 || mrp < 0.0 || selling_price < 0.0 {
-        return Err(rusqlite::Error::UserFunctionError("Prices cannot be negative".into()));
+    if exp_date.trim().len() != 10 {
+        return Err(make_field_error("expDate", "Enter a valid date"));
     }
     if let Some(mfg) = mfg_date {
         if !mfg.trim().is_empty() && exp_date.trim() < mfg.trim() {
-            return Err(rusqlite::Error::UserFunctionError("Expiry date cannot be earlier than manufacturing date".into()));
+            return Err(make_field_error("mfgDate", "Manufacturing date cannot be after expiry date"));
         }
     }
+    if cost_price < 0.0 {
+        return Err(make_field_error("costPrice", "Cost price cannot be negative"));
+    }
+    if mrp <= 0.0 {
+        return Err(make_field_error("mrp", "MRP must be greater than 0"));
+    }
+    if selling_price < 0.0 {
+        return Err(make_field_error("sellingPrice", "Selling price cannot be negative"));
+    }
+
+    // Duplicate batch check excluding the current batch
+    let duplicate_id: Option<i64> = conn.query_row(
+        "SELECT id FROM medicine_batches WHERE medicine_id = (SELECT medicine_id FROM medicine_batches WHERE id = ?1) AND id != ?1 AND LOWER(TRIM(batch_number)) = LOWER(TRIM(?2)) AND is_active = 1",
+        params![batch_id, batch_number.trim()],
+        |row| row.get(0),
+    ).optional()?;
+
+    if duplicate_id.is_some() {
+        return Err(make_field_error("batchNumber", "This batch number already exists for this medicine."));
+    }
+
     conn.execute(
         r#"UPDATE medicine_batches SET
             batch_number = ?1,

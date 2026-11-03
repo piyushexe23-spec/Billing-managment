@@ -2,6 +2,14 @@ pub mod db;
 
 use tauri::Manager;
 
+fn format_error(e: impl std::fmt::Display) -> String {
+    let s = e.to_string();
+    if let Some(pos) = s.find("{\"field\":") {
+        return s[pos..].to_string();
+    }
+    s
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! Welcome to IM MEDICOS Backend.", name)
@@ -112,7 +120,7 @@ fn create_medicine(
         low_stock_threshold,
         initial_batch.as_ref(),
     )
-    .map_err(|e| e.to_string())
+    .map_err(format_error)
 }
 
 /// Updates medicine master details
@@ -121,7 +129,7 @@ fn update_medicine(app: tauri::AppHandle, medicine: db::MedicineMasterInput) -> 
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let db_path = app_data_dir.join("im_medicos.db");
     let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
-    db::update_medicine(&conn, &medicine).map_err(|e| e.to_string())
+    db::update_medicine(&conn, &medicine).map_err(format_error)
 }
 
 /// Adds a new batch to an existing medicine or increments existing batch quantity
@@ -155,7 +163,7 @@ fn add_medicine_batch(
         note.as_deref(),
         add_to_existing.unwrap_or(false),
     )
-    .map_err(|e| e.to_string())
+    .map_err(format_error)
 }
 
 /// Updates batch details (number, dates, prices)
@@ -183,7 +191,7 @@ fn update_batch(
         mrp,
         selling_price,
     )
-    .map_err(|e| e.to_string())
+    .map_err(format_error)
 }
 
 /// Adjusts stock for a specific batch and records movement history

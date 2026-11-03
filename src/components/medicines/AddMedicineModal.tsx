@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { CreateMedicineInput, MedicineUnit } from "@/types/medicine";
-import { validateMedicineInput, MedicineValidationErrors, PriceWarnings } from "@/lib/medicineValidations";
+import {
+  validateMedicineInput,
+  MedicineValidationErrors,
+  PriceWarnings,
+} from "@/lib/medicineValidations";
 import { storeService } from "@/services/storeService";
+import { medicineService, parseFieldError } from "@/services/medicineService";
 import {
   X,
   Plus,
@@ -14,6 +19,7 @@ import {
   Layers,
   Barcode,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +28,7 @@ interface AddMedicineModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (input: CreateMedicineInput) => Promise<void>;
+  onOpenExisting?: (medicineId: number) => void;
 }
 
 const COMMON_UNITS: MedicineUnit[] = [
@@ -52,6 +59,7 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  onOpenExisting,
 }) => {
   // Form State
   const [name, setName] = useState("");
@@ -74,8 +82,9 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
   const [sellingPrice, setSellingPrice] = useState<number | "">("");
   const [stockQty, setStockQty] = useState<number | "">("");
 
-  // Validation & Warnings
+  // Validation, Duplicate Detection & Warnings
   const [errors, setErrors] = useState<MedicineValidationErrors>({});
+  const [existingMedicineId, setExistingMedicineId] = useState<number | null>(null);
   const [priceWarnings, setPriceWarnings] = useState<PriceWarnings>({});
   const [showWarningModal, setShowWarningModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -116,6 +125,7 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
     setSellingPrice("");
     setStockQty("");
     setErrors({});
+    setExistingMedicineId(null);
     setPriceWarnings({});
     setShowWarningModal(false);
   };
@@ -123,6 +133,31 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
   const handleClose = () => {
     resetForm();
     onClose();
+  };
+
+  const focusFirstInvalidField = (errs: MedicineValidationErrors) => {
+    const FIELD_ORDER = [
+      "name",
+      "unit",
+      "lowStockThreshold",
+      "batchNumber",
+      "mfgDate",
+      "expDate",
+      "stockQty",
+      "costPrice",
+      "mrp",
+      "sellingPrice",
+    ];
+    const firstInvalid = FIELD_ORDER.find((f) => errs[f as keyof MedicineValidationErrors]);
+    if (firstInvalid) {
+      setTimeout(() => {
+        const el = document.getElementById(`add-med-${firstInvalid}`);
+        if (el) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          el.focus();
+        }
+      }, 50);
+    }
   };
 
   const executeSave = async () => {
@@ -140,7 +175,7 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
         lowStockThreshold,
         initialBatch: includeInitialBatch
           ? {
-              batchNumber: batchNumber.trim(),
+              batchNumber: batchNumber.trim().toUpperCase(),
               mfgDate: mfgDate.trim() || undefined,
               expDate: expDate.trim(),
               costPrice: Number(costPrice) || 0,
@@ -153,20 +188,28 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
 
       await onSuccess(payload);
       handleClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error("Save medicine failed:", err);
-      setErrors((prev) => ({
-        ...prev,
-        name: err instanceof Error ? err.message : "Failed to save medicine record",
-      }));
+      const parsed = parseFieldError(err);
+      if (parsed.field) {
+        const updatedErrors = { ...errors, [parsed.field]: parsed.message };
+        setErrors(updatedErrors);
+        focusFirstInvalidField(updatedErrors);
+      } else {
+        setErrors((prev) => ({
+          ...prev,
+          general: parsed.message || "Failed to save medicine record",
+        }));
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // 1. Run standard input field validation
     const validation = validateMedicineInput({
       name,
       unit,
@@ -176,29 +219,45 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
             batchNumber,
             mfgDate,
             expDate,
-            costPrice: typeof costPrice === "number" ? costPrice : 0,
-            mrp: typeof mrp === "number" ? mrp : 0,
-            sellingPrice: typeof sellingPrice === "number" ? sellingPrice : 0,
-            stockQty: typeof stockQty === "number" ? stockQty : 0,
+            costPrice,
+            mrp,
+            sellingPrice,
+            stockQty,
           }
         : undefined,
     });
 
+    // 2. Check medicine duplicate (same name + manufacturer, case-insensitive, trimmed)
+    if (name.trim()) {
+      try {
+        const dupCheck = await medicineService.checkMedicineDuplicate(name, manufacturer);
+        if (dupCheck.exists && dupCheck.existingId) {
+          validation.errors.name = "This medicine already exists. Use Add New Batch on that medicine instead.";
+          validation.isValid = false;
+          setExistingMedicineId(dupCheck.existingId);
+        }
+      } catch (err) {
+        console.warn("Duplicate medicine check error:", err);
+      }
+    }
+
     if (!validation.isValid) {
       setErrors(validation.errors);
+      setPriceWarnings(validation.warnings);
+      focusFirstInvalidField(validation.errors);
       return;
     }
 
     setErrors({});
     setPriceWarnings(validation.warnings);
 
-    // If there are pricing warnings (Selling Price > MRP or < Cost Price), let user review
+    // If there are pricing warnings (Selling Price > MRP or < Cost Price), let user review and confirm
     if (validation.warnings.sellingPriceExceedsMrp || validation.warnings.sellingPriceBelowCost) {
       setShowWarningModal(true);
       return;
     }
 
-    executeSave();
+    await executeSave();
   };
 
   return (
@@ -222,7 +281,7 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
             </div>
 
             <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 leading-relaxed space-y-1">
-              <p className="font-semibold">{priceWarnings.message}</p>
+              <p className="font-semibold">{priceWarnings.sellingPriceWarning || priceWarnings.message}</p>
               <p className="text-[11px] text-amber-700">
                 Are you sure you want to proceed with this pricing configuration?
               </p>
@@ -286,6 +345,13 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
 
         {/* Scrollable Form Content */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-6 text-xs">
+          {errors.general && (
+            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+              <span>{errors.general}</span>
+            </div>
+          )}
+
           {/* SECTION 1: BASIC INFORMATION */}
           <div className="space-y-3.5">
             <div className="flex items-center gap-2 pb-1.5 border-b border-medical-slate-100 text-medical-navy-900 font-bold text-xs uppercase tracking-wider">
@@ -296,14 +362,18 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {/* Medicine Name (Required) */}
               <div className="space-y-1.5 sm:col-span-2">
-                <label className="font-bold text-medical-slate-800">
+                <label className="font-bold text-medical-slate-800" htmlFor="add-med-name">
                   Medicine Name <span className="text-red-500">*</span>
                 </label>
                 <Input
+                  id="add-med-name"
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value);
-                    if (errors.name) setErrors((p) => ({ ...p, name: undefined }));
+                    if (errors.name) {
+                      setErrors((p) => ({ ...p, name: undefined }));
+                      setExistingMedicineId(null);
+                    }
                   }}
                   placeholder="e.g. Dolo 650 Tablet or Augmentin 625 Duo"
                   error={!!errors.name}
@@ -311,10 +381,25 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
                   autoFocus
                 />
                 {errors.name && (
-                  <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" />
-                    {errors.name}
-                  </p>
+                  <div className="space-y-1 mt-1">
+                    <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{errors.name}</span>
+                    </p>
+                    {existingMedicineId && onOpenExisting && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleClose();
+                          onOpenExisting(existingMedicineId);
+                        }}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-bold text-medical-navy-900 bg-medical-navy-50 hover:bg-medical-navy-100 border border-medical-navy-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <ExternalLink className="w-3 h-3 text-medical-navy-700" />
+                        <span>Open existing medicine</span>
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -338,7 +423,13 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
                 </label>
                 <Input
                   value={manufacturer}
-                  onChange={(e) => setManufacturer(e.target.value)}
+                  onChange={(e) => {
+                    setManufacturer(e.target.value);
+                    if (errors.name && existingMedicineId) {
+                      setErrors((p) => ({ ...p, name: undefined }));
+                      setExistingMedicineId(null);
+                    }
+                  }}
                   placeholder="e.g. Micro Labs Ltd or Cipla"
                   className="text-xs h-9"
                 />
@@ -390,13 +481,19 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
 
               {/* Unit & Low Stock Alert Quantity */}
               <div className="space-y-1.5">
-                <label className="font-bold text-medical-slate-800">
+                <label className="font-bold text-medical-slate-800" htmlFor="add-med-unit">
                   Dispensing Unit <span className="text-red-500">*</span>
                 </label>
                 <select
+                  id="add-med-unit"
                   value={unit}
-                  onChange={(e) => setUnit(e.target.value)}
-                  className="w-full h-9 rounded-lg border border-medical-slate-300 px-3 text-xs bg-white text-medical-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-medical-navy-100 focus-visible:border-medical-navy-600"
+                  onChange={(e) => {
+                    setUnit(e.target.value);
+                    if (errors.unit) setErrors((p) => ({ ...p, unit: undefined }));
+                  }}
+                  className={`w-full h-9 rounded-lg border px-3 text-xs bg-white text-medical-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-medical-navy-100 focus-visible:border-medical-navy-600 ${
+                    errors.unit ? "border-red-500 ring-1 ring-red-300" : "border-medical-slate-300"
+                  }`}
                 >
                   {COMMON_UNITS.map((u) => (
                     <option key={u} value={u}>
@@ -404,24 +501,40 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
                     </option>
                   ))}
                 </select>
+                {errors.unit && (
+                  <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    {errors.unit}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">
-                <label className="font-bold text-medical-slate-800 flex items-center justify-between">
+                <label className="font-bold text-medical-slate-800 flex items-center justify-between" htmlFor="add-med-lowStockThreshold">
                   <span>Low Stock Alert Cutoff</span>
                   <span className="text-[10px] text-medical-slate-400">
                     Default from Store Settings
                   </span>
                 </label>
                 <Input
+                  id="add-med-lowStockThreshold"
                   type="number"
                   min={0}
                   step={1}
                   value={lowStockThreshold}
-                  onChange={(e) => setLowStockThreshold(parseInt(e.target.value, 10) || 0)}
+                  onChange={(e) => {
+                    setLowStockThreshold(parseInt(e.target.value, 10) || 0);
+                    if (errors.lowStockThreshold) setErrors((p) => ({ ...p, lowStockThreshold: undefined }));
+                  }}
                   error={!!errors.lowStockThreshold}
                   className="font-mono text-xs h-9"
                 />
+                {errors.lowStockThreshold && (
+                  <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" />
+                    {errors.lowStockThreshold}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -449,10 +562,11 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
                   {/* Batch Number */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-medical-slate-800">
+                    <label className="font-bold text-medical-slate-800" htmlFor="add-med-batchNumber">
                       Batch Number <span className="text-red-500">*</span>
                     </label>
                     <Input
+                      id="add-med-batchNumber"
                       value={batchNumber}
                       onChange={(e) => {
                         setBatchNumber(e.target.value.toUpperCase());
@@ -463,51 +577,62 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
                       className="font-mono text-xs uppercase h-9"
                     />
                     {errors.batchNumber && (
-                      <p className="text-red-600 text-[11px] font-semibold">
-                        {errors.batchNumber}
+                      <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        <span>{errors.batchNumber}</span>
                       </p>
                     )}
                   </div>
 
                   {/* Manufacturing Date */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-medical-slate-800 flex items-center gap-1">
+                    <label className="font-bold text-medical-slate-800 flex items-center gap-1" htmlFor="add-med-mfgDate">
                       <Calendar className="w-3 h-3 text-medical-slate-400" />
                       Mfg Date (Optional)
                     </label>
                     <Input
+                      id="add-med-mfgDate"
                       type="date"
                       value={mfgDate}
-                      onChange={(e) => setMfgDate(e.target.value)}
+                      onChange={(e) => {
+                        setMfgDate(e.target.value);
+                        if (errors.mfgDate) setErrors((p) => ({ ...p, mfgDate: undefined }));
+                      }}
                       error={!!errors.mfgDate}
                       className="text-xs h-9"
                     />
                     {errors.mfgDate && (
-                      <p className="text-red-600 text-[11px] font-semibold">
-                        {errors.mfgDate}
+                      <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        <span>{errors.mfgDate}</span>
                       </p>
                     )}
                   </div>
 
                   {/* Expiry Date */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-medical-slate-800 flex items-center gap-1">
+                    <label className="font-bold text-medical-slate-800 flex items-center gap-1" htmlFor="add-med-expDate">
                       <Calendar className="w-3 h-3 text-medical-slate-400" />
                       Expiry Date <span className="text-red-500">*</span>
                     </label>
                     <Input
+                      id="add-med-expDate"
                       type="date"
                       value={expDate}
                       onChange={(e) => {
                         setExpDate(e.target.value);
                         if (errors.expDate) setErrors((p) => ({ ...p, expDate: undefined }));
+                        if (errors.mfgDate && mfgDate && e.target.value >= mfgDate) {
+                          setErrors((p) => ({ ...p, mfgDate: undefined }));
+                        }
                       }}
                       error={!!errors.expDate}
                       className="text-xs h-9"
                     />
                     {errors.expDate && (
-                      <p className="text-red-600 text-[11px] font-semibold">
-                        {errors.expDate}
+                      <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        <span>{errors.expDate}</span>
                       </p>
                     )}
                   </div>
@@ -517,11 +642,12 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3.5 pt-2 border-t border-medical-slate-200">
                   {/* Cost Price */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-medical-slate-800 flex items-center gap-1">
+                    <label className="font-bold text-medical-slate-800 flex items-center gap-1" htmlFor="add-med-costPrice">
                       <IndianRupee className="w-3 h-3 text-medical-slate-400" />
                       Cost Price <span className="text-red-500">*</span>
                     </label>
                     <Input
+                      id="add-med-costPrice"
                       type="number"
                       min={0}
                       step="0.01"
@@ -536,17 +662,21 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
                       className="font-mono text-xs h-9"
                     />
                     {errors.costPrice && (
-                      <p className="text-red-600 text-[11px] font-semibold">{errors.costPrice}</p>
+                      <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        <span>{errors.costPrice}</span>
+                      </p>
                     )}
                   </div>
 
                   {/* MRP */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-medical-slate-800 flex items-center gap-1">
+                    <label className="font-bold text-medical-slate-800 flex items-center gap-1" htmlFor="add-med-mrp">
                       <IndianRupee className="w-3 h-3 text-medical-slate-400" />
                       MRP <span className="text-red-500">*</span>
                     </label>
                     <Input
+                      id="add-med-mrp"
                       type="number"
                       min={0}
                       step="0.01"
@@ -561,17 +691,21 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
                       className="font-mono text-xs h-9 font-bold"
                     />
                     {errors.mrp && (
-                      <p className="text-red-600 text-[11px] font-semibold">{errors.mrp}</p>
+                      <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        <span>{errors.mrp}</span>
+                      </p>
                     )}
                   </div>
 
                   {/* Selling Price */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-medical-slate-800 flex items-center gap-1">
+                    <label className="font-bold text-medical-slate-800 flex items-center gap-1" htmlFor="add-med-sellingPrice">
                       <IndianRupee className="w-3 h-3 text-medical-slate-400" />
                       Selling Price <span className="text-red-500">*</span>
                     </label>
                     <Input
+                      id="add-med-sellingPrice"
                       type="number"
                       min={0}
                       step="0.01"
@@ -586,19 +720,35 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
                       className="font-mono text-xs h-9 font-bold text-medical-green-800"
                     />
                     {errors.sellingPrice && (
-                      <p className="text-red-600 text-[11px] font-semibold">{errors.sellingPrice}</p>
+                      <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        <span>{errors.sellingPrice}</span>
+                      </p>
+                    )}
+                    {priceWarnings.sellingPriceExceedsMrp && (
+                      <p className="text-amber-600 text-[11px] font-semibold flex items-center gap-1 mt-1">
+                        <AlertTriangle className="w-3 h-3 shrink-0" />
+                        <span>Selling price is higher than MRP</span>
+                      </p>
+                    )}
+                    {priceWarnings.sellingPriceBelowCost && (
+                      <p className="text-amber-600 text-[11px] font-semibold flex items-center gap-1 mt-1">
+                        <AlertTriangle className="w-3 h-3 shrink-0" />
+                        <span>Selling price is below cost price</span>
+                      </p>
                     )}
                   </div>
 
                   {/* Initial Stock Quantity */}
                   <div className="space-y-1.5">
-                    <label className="font-bold text-medical-slate-800 flex items-center gap-1">
+                    <label className="font-bold text-medical-slate-800 flex items-center gap-1" htmlFor="add-med-stockQty">
                       <Package className="w-3 h-3 text-medical-slate-400" />
                       Opening Units <span className="text-red-500">*</span>
                     </label>
                     <Input
+                      id="add-med-stockQty"
                       type="number"
-                      min={0}
+                      min={1}
                       step={1}
                       value={stockQty}
                       onChange={(e) => {
@@ -611,7 +761,10 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
                       className="font-mono text-xs h-9 font-bold"
                     />
                     {errors.stockQty && (
-                      <p className="text-red-600 text-[11px] font-semibold">{errors.stockQty}</p>
+                      <p className="text-red-600 text-[11px] font-semibold flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 shrink-0" />
+                        <span>{errors.stockQty}</span>
+                      </p>
                     )}
                   </div>
                 </div>
@@ -639,16 +792,14 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
               type="submit"
               size="sm"
               disabled={isSubmitting}
-              className="text-xs font-bold bg-medical-navy-900 hover:bg-medical-navy-800 text-white shadow-xs cursor-pointer disabled:opacity-50"
+              className="text-xs font-bold bg-medical-navy-900 hover:bg-medical-navy-800 text-white shadow-xs cursor-pointer"
             >
               {isSubmitting ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
-                  Saving...
-                </>
+                <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" />
               ) : (
-                "Save Medicine"
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
               )}
+              Save Medicine
             </Button>
           </div>
         </form>
@@ -656,4 +807,3 @@ export const AddMedicineModal: React.FC<AddMedicineModalProps> = ({
     </div>
   );
 };
-

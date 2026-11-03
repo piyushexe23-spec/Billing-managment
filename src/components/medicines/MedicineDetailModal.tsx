@@ -396,7 +396,7 @@ export const MedicineDetailModal: React.FC<MedicineDetailModalProps> = ({
                                       title="Edit batch details (prices, dates, batch number)"
                                     >
                                       <Pencil className="w-3 h-3 mr-1" />
-                                      Edit
+                                      Edit batch
                                     </Button>
 
                                     {/* Adjust Stock */}
@@ -551,6 +551,10 @@ export const MedicineDetailModal: React.FC<MedicineDetailModalProps> = ({
         onSuccess={async () => {
           await loadData();
           await onRefresh();
+        }}
+        onManageBatches={() => {
+          setIsEditMedicineOpen(false);
+          setActiveTab("batches");
         }}
       />
 

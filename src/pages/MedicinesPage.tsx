@@ -1051,6 +1051,10 @@ export const MedicinesPage: React.FC = () => {
           await medicineService.createMedicine(input);
           await loadData();
         }}
+        onOpenExisting={(existingId) => {
+          setIsAddModalOpen(false);
+          setViewMedicineId(existingId);
+        }}
       />
 
       <MedicineDetailModal
@@ -1087,6 +1091,10 @@ export const MedicinesPage: React.FC = () => {
         onClose={() => setEditMedicineId(null)}
         medicineId={editMedicineId}
         onSuccess={loadData}
+        onManageBatches={(medId) => {
+          setEditMedicineId(null);
+          setViewMedicineId(medId);
+        }}
       />
 
       {/* Add New Batch Modal */}

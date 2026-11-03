@@ -175,6 +175,24 @@ function saveLocalMovements(movs: StockMovement[]): void {
 }
 
 // ----------------------------------------------------------------------
+// Exported Helper to Parse Field-Specific Errors
+// ----------------------------------------------------------------------
+export function parseFieldError(err: any): { field?: string; message: string } {
+  if (!err) return { message: "An unexpected error occurred." };
+  const raw = err instanceof Error ? err.message : String(err);
+  try {
+    const jsonMatch = raw.match(/\{[\s\S]*"field"[\s\S]*"message"[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.field && parsed.message) {
+        return { field: parsed.field, message: parsed.message };
+      }
+    }
+  } catch {}
+  return { message: raw };
+}
+
+// ----------------------------------------------------------------------
 // Exported Medicine Service
 // ----------------------------------------------------------------------
 export const medicineService = {
@@ -292,46 +310,128 @@ export const medicineService = {
   },
 
   /**
+   * Checks whether a medicine with the same name and manufacturer already exists
+   */
+  async checkMedicineDuplicate(
+    name: string,
+    manufacturer?: string,
+    excludeId?: number
+  ): Promise<{ exists: boolean; existingId?: number; existingName?: string }> {
+    const normName = name.trim().toLowerCase();
+    const normMfr = (manufacturer || "").trim().toLowerCase();
+    if (!normName) return { exists: false };
+
+    const meds = await this.getMedicines(false);
+    const found = meds.find((m) => {
+      if (excludeId && m.id === excludeId) return false;
+      const mName = m.name.trim().toLowerCase();
+      const mMfr = (m.manufacturer || "").trim().toLowerCase();
+      return mName === normName && mMfr === normMfr;
+    });
+
+    if (found) {
+      return { exists: true, existingId: found.id, existingName: found.name };
+    }
+    return { exists: false };
+  },
+
+  /**
+   * Checks whether a batch number already exists for a medicine
+   */
+  async checkBatchDuplicate(
+    medicineId: number,
+    batchNumber: string,
+    excludeBatchId?: number
+  ): Promise<{ exists: boolean }> {
+    const normBatch = batchNumber.trim().toLowerCase();
+    if (!normBatch) return { exists: false };
+
+    const med = await this.getMedicineById(medicineId);
+    if (!med) return { exists: false };
+
+    const exists = med.batches.some(
+      (b) => (!excludeBatchId || b.id !== excludeBatchId) && b.batchNumber.trim().toLowerCase() === normBatch
+    );
+
+    return { exists };
+  },
+
+  /**
    * Creates a new medicine and optional initial batch
    */
   async createMedicine(input: CreateMedicineInput): Promise<MedicineWithBatches> {
     if (isTauri()) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const newId = await invoke<number>("create_medicine", {
-          name: input.name,
-          genericName: input.genericName || null,
-          manufacturer: input.manufacturer || null,
-          category: input.category || null,
-          description: input.description || null,
-          barcode: input.barcode || null,
-          hsnCode: input.hsnCode || null,
-          unit: input.unit,
-          lowStockThreshold: input.lowStockThreshold,
-          initialBatch: input.initialBatch
-            ? {
-                id: 0,
-                medicineId: 0,
-                batchNumber: input.initialBatch.batchNumber,
-                mfgDate: input.initialBatch.mfgDate || null,
-                expDate: input.initialBatch.expDate,
-                costPrice: input.initialBatch.costPrice,
-                mrp: input.initialBatch.mrp,
-                sellingPrice: input.initialBatch.sellingPrice,
-                stockQty: input.initialBatch.stockQty,
-                isActive: true,
-              }
-            : null,
-        });
-        const created = await this.getMedicineById(newId);
-        if (created) return created;
-      } catch (err) {
-        console.warn("Tauri create_medicine fallback:", err);
-      }
+      const { invoke } = await import("@tauri-apps/api/core");
+      const newId = await invoke<number>("create_medicine", {
+        name: input.name,
+        genericName: input.genericName || null,
+        manufacturer: input.manufacturer || null,
+        category: input.category || null,
+        description: input.description || null,
+        barcode: input.barcode || null,
+        hsnCode: input.hsnCode || null,
+        unit: input.unit,
+        lowStockThreshold: input.lowStockThreshold,
+        initialBatch: input.initialBatch
+          ? {
+              id: 0,
+              medicineId: 0,
+              batchNumber: input.initialBatch.batchNumber,
+              mfgDate: input.initialBatch.mfgDate || null,
+              expDate: input.initialBatch.expDate,
+              costPrice: input.initialBatch.costPrice,
+              mrp: input.initialBatch.mrp,
+              sellingPrice: input.initialBatch.sellingPrice,
+              stockQty: input.initialBatch.stockQty,
+              isActive: true,
+            }
+          : null,
+      });
+      const created = await this.getMedicineById(newId);
+      if (created) return created;
     }
 
     // Local mirror implementation
     const medicines = getLocalMedicines();
+
+    if (!input.name.trim()) {
+      throw new Error(JSON.stringify({ field: "name", message: "Medicine name cannot be empty" }));
+    }
+
+    const normName = input.name.trim().toLowerCase();
+    const normMfr = (input.manufacturer || "").trim().toLowerCase();
+    const dup = medicines.find(
+      (m) => m.isActive && m.name.trim().toLowerCase() === normName && (m.manufacturer || "").trim().toLowerCase() === normMfr
+    );
+    if (dup) {
+      throw new Error(JSON.stringify({ field: "name", message: "This medicine already exists. Use Add New Batch on that medicine instead." }));
+    }
+
+    if (input.initialBatch) {
+      const b = input.initialBatch;
+      if (!b.batchNumber.trim()) {
+        throw new Error(JSON.stringify({ field: "batchNumber", message: "Batch number cannot be empty" }));
+      }
+      if (!b.expDate.trim()) {
+        throw new Error(JSON.stringify({ field: "expDate", message: "Expiry date is required" }));
+      }
+      if (b.mfgDate && b.expDate < b.mfgDate) {
+        throw new Error(JSON.stringify({ field: "mfgDate", message: "Manufacturing date cannot be after expiry date" }));
+      }
+      if (b.stockQty < 1) {
+        throw new Error(JSON.stringify({ field: "stockQty", message: "Quantity must be at least 1" }));
+      }
+      if (b.costPrice < 0) {
+        throw new Error(JSON.stringify({ field: "costPrice", message: "Cost price cannot be negative" }));
+      }
+      if (b.mrp <= 0) {
+        throw new Error(JSON.stringify({ field: "mrp", message: "MRP must be greater than 0" }));
+      }
+      if (b.sellingPrice < 0) {
+        throw new Error(JSON.stringify({ field: "sellingPrice", message: "Selling price cannot be negative" }));
+      }
+    }
+
     const newId = medicines.length > 0 ? Math.max(...medicines.map((m) => m.id)) + 1 : 1;
 
     const newMedicine: Medicine = {
@@ -402,37 +502,42 @@ export const medicineService = {
    */
   async updateMedicine(input: UpdateMedicineInput): Promise<Medicine> {
     if (!input.name.trim()) {
-      throw new Error("Medicine name is required.");
+      throw new Error(JSON.stringify({ field: "name", message: "Medicine name cannot be empty" }));
     }
     if (input.lowStockThreshold < 0) {
-      throw new Error("Low stock threshold cannot be negative.");
+      throw new Error(JSON.stringify({ field: "lowStockThreshold", message: "Low stock threshold cannot be negative" }));
     }
 
     if (isTauri()) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("update_medicine", {
-          medicine: {
-            id: input.id,
-            name: input.name.trim(),
-            genericName: input.genericName?.trim() || null,
-            manufacturer: input.manufacturer?.trim() || null,
-            category: input.category?.trim() || null,
-            description: input.description?.trim() || null,
-            barcode: input.barcode?.trim() || null,
-            hsnCode: input.hsnCode?.trim() || null,
-            unit: input.unit.trim(),
-            lowStockThreshold: input.lowStockThreshold,
-          },
-        });
-        const med = await this.getMedicineById(input.id);
-        if (med) return med;
-      } catch (err) {
-        console.warn("Tauri update_medicine fallback:", err);
-      }
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("update_medicine", {
+        medicine: {
+          id: input.id,
+          name: input.name.trim(),
+          genericName: input.genericName?.trim() || null,
+          manufacturer: input.manufacturer?.trim() || null,
+          category: input.category?.trim() || null,
+          description: input.description?.trim() || null,
+          barcode: input.barcode?.trim() || null,
+          hsnCode: input.hsnCode?.trim() || null,
+          unit: input.unit.trim(),
+          lowStockThreshold: input.lowStockThreshold,
+        },
+      });
+      const med = await this.getMedicineById(input.id);
+      if (med) return med;
     }
 
     const medicines = getLocalMedicines();
+    const normName = input.name.trim().toLowerCase();
+    const normMfr = (input.manufacturer || "").trim().toLowerCase();
+    const dup = medicines.find(
+      (m) => m.id !== input.id && m.isActive && m.name.trim().toLowerCase() === normName && (m.manufacturer || "").trim().toLowerCase() === normMfr
+    );
+    if (dup) {
+      throw new Error(JSON.stringify({ field: "name", message: "This medicine already exists. Use Add New Batch on that medicine instead." }));
+    }
+
     const idx = medicines.findIndex((m) => m.id === input.id);
     if (idx === -1) {
       throw new Error("Medicine record not found.");
@@ -461,56 +566,56 @@ export const medicineService = {
    */
   async addNewBatch(input: AddNewBatchInput): Promise<MedicineBatch> {
     if (!input.batchNumber.trim()) {
-      throw new Error("Batch number is required.");
+      throw new Error(JSON.stringify({ field: "batchNumber", message: "Batch number cannot be empty" }));
     }
     if (!input.expDate.trim()) {
-      throw new Error("Expiry date is required.");
+      throw new Error(JSON.stringify({ field: "expDate", message: "Expiry date is required" }));
     }
     if (input.quantityReceived <= 0) {
-      throw new Error("Quantity received must be a positive integer greater than zero.");
+      throw new Error(JSON.stringify({ field: "quantityReceived", message: "Quantity must be at least 1" }));
     }
-    if (input.costPrice < 0 || input.mrp < 0 || input.sellingPrice < 0) {
-      throw new Error("Prices cannot be negative.");
+    if (input.costPrice < 0) {
+      throw new Error(JSON.stringify({ field: "costPrice", message: "Cost price cannot be negative" }));
+    }
+    if (input.mrp <= 0) {
+      throw new Error(JSON.stringify({ field: "mrp", message: "MRP must be greater than 0" }));
+    }
+    if (input.sellingPrice < 0) {
+      throw new Error(JSON.stringify({ field: "sellingPrice", message: "Selling price cannot be negative" }));
     }
     if (input.mfgDate && input.expDate < input.mfgDate) {
-      throw new Error("Expiry date cannot be earlier than manufacturing date.");
+      throw new Error(JSON.stringify({ field: "mfgDate", message: "Manufacturing date cannot be after expiry date" }));
     }
 
     if (isTauri()) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const batchId = await invoke<number>("add_medicine_batch", {
-          medicineId: input.medicineId,
-          batchNumber: input.batchNumber.trim().toUpperCase(),
-          mfgDate: input.mfgDate || null,
-          expDate: input.expDate,
-          costPrice: input.costPrice,
-          mrp: input.mrp,
-          sellingPrice: input.sellingPrice,
-          quantityReceived: input.quantityReceived,
-          note: input.note || null,
-          addToExisting: input.addToExisting || false,
-        });
-        const med = await this.getMedicineById(input.medicineId);
-        const batch = med?.batches.find((b) => b.id === batchId);
-        if (batch) return batch;
-      } catch (err: any) {
-        if (err && String(err).includes("BATCH_ALREADY_EXISTS")) {
-          throw new Error(`BATCH_ALREADY_EXISTS: Batch '${input.batchNumber}' already exists for this medicine.`);
-        }
-        console.warn("Tauri add_medicine_batch fallback:", err);
-      }
+      const { invoke } = await import("@tauri-apps/api/core");
+      const batchId = await invoke<number>("add_medicine_batch", {
+        medicineId: input.medicineId,
+        batchNumber: input.batchNumber.trim().toUpperCase(),
+        mfgDate: input.mfgDate || null,
+        expDate: input.expDate,
+        costPrice: input.costPrice,
+        mrp: input.mrp,
+        sellingPrice: input.sellingPrice,
+        quantityReceived: input.quantityReceived,
+        note: input.note || null,
+        addToExisting: input.addToExisting || false,
+      });
+      const med = await this.getMedicineById(input.medicineId);
+      const batch = med?.batches.find((b) => b.id === batchId);
+      if (batch) return batch;
     }
 
     const batches = getLocalBatches();
     const existing = batches.find(
       (b) =>
         b.medicineId === input.medicineId &&
+        b.isActive &&
         b.batchNumber.toLowerCase() === input.batchNumber.trim().toLowerCase()
     );
 
     if (existing && !input.addToExisting) {
-      throw new Error(`BATCH_ALREADY_EXISTS: Batch '${input.batchNumber}' already exists for this medicine.`);
+      throw new Error(JSON.stringify({ field: "batchNumber", message: "This batch number already exists for this medicine." }));
     }
 
     const medicines = getLocalMedicines();
@@ -586,37 +691,50 @@ export const medicineService = {
    */
   async updateBatch(input: UpdateBatchInput): Promise<void> {
     if (!input.batchNumber.trim()) {
-      throw new Error("Batch number is required.");
+      throw new Error(JSON.stringify({ field: "batchNumber", message: "Batch number cannot be empty" }));
     }
     if (!input.expDate.trim()) {
-      throw new Error("Expiry date is required.");
+      throw new Error(JSON.stringify({ field: "expDate", message: "Expiry date is required" }));
     }
-    if (input.costPrice < 0 || input.mrp < 0 || input.sellingPrice < 0) {
-      throw new Error("Prices cannot be negative.");
+    if (input.costPrice < 0) {
+      throw new Error(JSON.stringify({ field: "costPrice", message: "Cost price cannot be negative" }));
+    }
+    if (input.mrp <= 0) {
+      throw new Error(JSON.stringify({ field: "mrp", message: "MRP must be greater than 0" }));
+    }
+    if (input.sellingPrice < 0) {
+      throw new Error(JSON.stringify({ field: "sellingPrice", message: "Selling price cannot be negative" }));
     }
     if (input.mfgDate && input.expDate < input.mfgDate) {
-      throw new Error("Expiry date cannot be earlier than manufacturing date.");
+      throw new Error(JSON.stringify({ field: "mfgDate", message: "Manufacturing date cannot be after expiry date" }));
     }
 
     if (isTauri()) {
-      try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("update_batch", {
-          batchId: input.id,
-          batchNumber: input.batchNumber.trim().toUpperCase(),
-          mfgDate: input.mfgDate || null,
-          expDate: input.expDate,
-          costPrice: input.costPrice,
-          mrp: input.mrp,
-          sellingPrice: input.sellingPrice,
-        });
-        return;
-      } catch (err) {
-        console.warn("Tauri update_batch fallback:", err);
-      }
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("update_batch", {
+        batchId: input.id,
+        batchNumber: input.batchNumber.trim().toUpperCase(),
+        mfgDate: input.mfgDate || null,
+        expDate: input.expDate,
+        costPrice: input.costPrice,
+        mrp: input.mrp,
+        sellingPrice: input.sellingPrice,
+      });
+      return;
     }
 
     const batches = getLocalBatches();
+    const current = batches.find((b) => b.id === input.id);
+    if (current) {
+      const normBatch = input.batchNumber.trim().toLowerCase();
+      const dup = batches.find(
+        (b) => b.medicineId === current.medicineId && b.id !== input.id && b.isActive && b.batchNumber.trim().toLowerCase() === normBatch
+      );
+      if (dup) {
+        throw new Error(JSON.stringify({ field: "batchNumber", message: "This batch number already exists for this medicine." }));
+      }
+    }
+
     const idx = batches.findIndex((b) => b.id === input.id);
     if (idx !== -1) {
       batches[idx] = {
