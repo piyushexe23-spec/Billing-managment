@@ -43,6 +43,7 @@ pub fn init_database<P: AsRef<Path>>(path: P) -> Result<Connection> {
 
     create_tables(&conn)?;
     migrate_medicine_tables(&conn)?;
+    migrate_billing_tables(&conn)?;
     seed_default_admin(&conn)?;
     seed_default_store(&conn)?;
     cleanup_demo_medicines(&conn)?;
@@ -54,6 +55,7 @@ pub fn init_database<P: AsRef<Path>>(path: P) -> Result<Connection> {
 pub fn get_connection<P: AsRef<Path>>(path: P) -> Result<Connection> {
     let conn = Connection::open(path)?;
     conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
+    migrate_billing_tables(&conn).ok();
     Ok(conn)
 }
 
@@ -440,6 +442,123 @@ pub struct InventorySummaryMetrics {
     pub expired_count: i64,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SaleableBatch {
+    pub id: i64,
+    pub medicine_id: i64,
+    pub batch_number: String,
+    pub mfg_date: Option<String>,
+    pub exp_date: String,
+    pub cost_price: f64,
+    pub mrp: f64,
+    pub selling_price: f64,
+    pub stock_qty: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SaleableMedicine {
+    pub id: i64,
+    pub name: String,
+    pub generic_name: Option<String>,
+    pub manufacturer: Option<String>,
+    pub category: Option<String>,
+    pub barcode: Option<String>,
+    pub unit: String,
+    pub low_stock_threshold: i64,
+    pub is_active: bool,
+    pub total_saleable_stock: i64,
+    pub nearest_expiry_date: Option<String>,
+    pub batches: Vec<SaleableBatch>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveBillItemInput {
+    pub medicine_id: i64,
+    pub batch_id: i64,
+    pub medicine_name: String,
+    pub batch_number: String,
+    pub exp_date: String,
+    pub unit: String,
+    pub quantity: i64,
+    pub cost_price: f64,
+    pub mrp: f64,
+    pub selling_price: f64,
+    pub rate: f64,
+    pub amount: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveBillInput {
+    pub customer_name: String,
+    pub customer_mobile: String,
+    pub doctor_name: Option<String>,
+    pub discount_mode: String,
+    pub payment_mode: String,
+    pub items: Vec<SaveBillItemInput>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BillStoreSnapshot {
+    pub store_name: String,
+    pub address: Option<String>,
+    pub phone: Option<String>,
+    pub email: Option<String>,
+    pub gstin: Option<String>,
+    pub drug_license_1: Option<String>,
+    pub drug_license_2: Option<String>,
+    pub footer_terms: Option<String>,
+    pub show_gstin: bool,
+    pub show_amount_in_words: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BillItemRecord {
+    pub id: i64,
+    pub bill_id: i64,
+    pub medicine_id: i64,
+    pub batch_id: i64,
+    pub medicine_name: String,
+    pub batch_number: String,
+    pub exp_date: String,
+    pub unit: String,
+    pub quantity: i64,
+    pub cost_price: f64,
+    pub mrp: f64,
+    pub selling_price: f64,
+    pub rate: f64,
+    pub amount: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BillRecord {
+    pub id: i64,
+    pub bill_number: String,
+    pub customer_name: String,
+    pub customer_mobile: String,
+    pub doctor_name: Option<String>,
+    pub bill_date: String,
+    pub discount_mode: String,
+    pub payment_mode: String,
+    pub sub_total: f64,
+    pub discount: f64,
+    pub gst_total: f64,
+    pub cgst: f64,
+    pub sgst: f64,
+    pub grand_total: f64,
+    pub amount_in_words: String,
+    pub store_snapshot: BillStoreSnapshot,
+    pub items: Vec<BillItemRecord>,
+    pub status: String,
+    pub created_at: String,
+}
+
 /// Safely migrates existing medicine tables to add relational columns if missing
 pub fn migrate_medicine_tables(conn: &Connection) -> Result<()> {
     let mut stmt = conn.prepare("PRAGMA table_info(medicines)")?;
@@ -473,6 +592,141 @@ pub fn migrate_medicine_tables(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_medicine_batch ON medicine_batches(medicine_id, batch_number);"
     ).ok();
+
+    Ok(())
+}
+
+/// Safely migrates billing and invoice tables (bills, bill_items)
+pub fn migrate_billing_tables(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS bills (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bill_number TEXT NOT NULL UNIQUE,
+            customer_name TEXT NOT NULL,
+            customer_mobile TEXT NOT NULL,
+            doctor_name TEXT,
+            bill_date TEXT NOT NULL,
+            discount_mode TEXT NOT NULL DEFAULT 'NON_DISCOUNT',
+            payment_mode TEXT NOT NULL DEFAULT 'CASH',
+            sub_total REAL NOT NULL DEFAULT 0.0,
+            discount REAL NOT NULL DEFAULT 0.0,
+            gst_total REAL NOT NULL DEFAULT 0.0,
+            cgst REAL NOT NULL DEFAULT 0.0,
+            sgst REAL NOT NULL DEFAULT 0.0,
+            grand_total REAL NOT NULL DEFAULT 0.0,
+            amount_in_words TEXT,
+            store_name TEXT,
+            store_address TEXT,
+            store_phone TEXT,
+            store_email TEXT,
+            store_gstin TEXT,
+            store_dl_1 TEXT,
+            store_dl_2 TEXT,
+            store_footer_terms TEXT,
+            show_gstin INTEGER NOT NULL DEFAULT 1,
+            show_amount_in_words INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'COMPLETED',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS bill_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            bill_id INTEGER NOT NULL REFERENCES bills(id) ON DELETE RESTRICT,
+            medicine_id INTEGER NOT NULL REFERENCES medicines(id),
+            batch_id INTEGER NOT NULL REFERENCES medicine_batches(id),
+            medicine_name TEXT NOT NULL,
+            batch_number TEXT NOT NULL,
+            exp_date TEXT NOT NULL,
+            unit TEXT NOT NULL,
+            quantity INTEGER NOT NULL,
+            cost_price REAL NOT NULL,
+            mrp REAL NOT NULL,
+            selling_price REAL NOT NULL,
+            rate REAL NOT NULL,
+            amount REAL NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_bill_items_bill ON bill_items(bill_id);
+        CREATE INDEX IF NOT EXISTS idx_bill_items_med ON bill_items(medicine_id);
+        CREATE INDEX IF NOT EXISTS idx_bill_items_batch ON bill_items(batch_id);
+        "#
+    )?;
+
+    // Safe column additions in case bills was created earlier with draft columns
+    let mut stmt = conn.prepare("PRAGMA table_info(bills)")?;
+    let cols: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if !cols.iter().any(|c| c == "customer_name") {
+        conn.execute("ALTER TABLE bills ADD COLUMN customer_name TEXT NOT NULL DEFAULT ''", []).ok();
+    }
+    if !cols.iter().any(|c| c == "customer_mobile") {
+        conn.execute("ALTER TABLE bills ADD COLUMN customer_mobile TEXT NOT NULL DEFAULT ''", []).ok();
+    }
+    if !cols.iter().any(|c| c == "bill_date") {
+        conn.execute("ALTER TABLE bills ADD COLUMN bill_date TEXT NOT NULL DEFAULT (date('now', 'localtime'))", []).ok();
+    }
+    if !cols.iter().any(|c| c == "discount_mode") {
+        conn.execute("ALTER TABLE bills ADD COLUMN discount_mode TEXT NOT NULL DEFAULT 'NON_DISCOUNT'", []).ok();
+    }
+    if !cols.iter().any(|c| c == "sub_total") {
+        conn.execute("ALTER TABLE bills ADD COLUMN sub_total REAL NOT NULL DEFAULT 0.0", []).ok();
+    }
+    if !cols.iter().any(|c| c == "discount") {
+        conn.execute("ALTER TABLE bills ADD COLUMN discount REAL NOT NULL DEFAULT 0.0", []).ok();
+    }
+    if !cols.iter().any(|c| c == "gst_total") {
+        conn.execute("ALTER TABLE bills ADD COLUMN gst_total REAL NOT NULL DEFAULT 0.0", []).ok();
+    }
+    if !cols.iter().any(|c| c == "cgst") {
+        conn.execute("ALTER TABLE bills ADD COLUMN cgst REAL NOT NULL DEFAULT 0.0", []).ok();
+    }
+    if !cols.iter().any(|c| c == "sgst") {
+        conn.execute("ALTER TABLE bills ADD COLUMN sgst REAL NOT NULL DEFAULT 0.0", []).ok();
+    }
+    if !cols.iter().any(|c| c == "grand_total") {
+        conn.execute("ALTER TABLE bills ADD COLUMN grand_total REAL NOT NULL DEFAULT 0.0", []).ok();
+    }
+    if !cols.iter().any(|c| c == "amount_in_words") {
+        conn.execute("ALTER TABLE bills ADD COLUMN amount_in_words TEXT", []).ok();
+    }
+    if !cols.iter().any(|c| c == "store_name") {
+        conn.execute("ALTER TABLE bills ADD COLUMN store_name TEXT", []).ok();
+    }
+    if !cols.iter().any(|c| c == "store_address") {
+        conn.execute("ALTER TABLE bills ADD COLUMN store_address TEXT", []).ok();
+    }
+    if !cols.iter().any(|c| c == "store_phone") {
+        conn.execute("ALTER TABLE bills ADD COLUMN store_phone TEXT", []).ok();
+    }
+    if !cols.iter().any(|c| c == "store_email") {
+        conn.execute("ALTER TABLE bills ADD COLUMN store_email TEXT", []).ok();
+    }
+    if !cols.iter().any(|c| c == "store_gstin") {
+        conn.execute("ALTER TABLE bills ADD COLUMN store_gstin TEXT", []).ok();
+    }
+    if !cols.iter().any(|c| c == "store_dl_1") {
+        conn.execute("ALTER TABLE bills ADD COLUMN store_dl_1 TEXT", []).ok();
+    }
+    if !cols.iter().any(|c| c == "store_dl_2") {
+        conn.execute("ALTER TABLE bills ADD COLUMN store_dl_2 TEXT", []).ok();
+    }
+    if !cols.iter().any(|c| c == "store_footer_terms") {
+        conn.execute("ALTER TABLE bills ADD COLUMN store_footer_terms TEXT", []).ok();
+    }
+    if !cols.iter().any(|c| c == "show_gstin") {
+        conn.execute("ALTER TABLE bills ADD COLUMN show_gstin INTEGER NOT NULL DEFAULT 1", []).ok();
+    }
+    if !cols.iter().any(|c| c == "show_amount_in_words") {
+        conn.execute("ALTER TABLE bills ADD COLUMN show_amount_in_words INTEGER NOT NULL DEFAULT 1", []).ok();
+    }
+    if !cols.iter().any(|c| c == "status") {
+        conn.execute("ALTER TABLE bills ADD COLUMN status TEXT NOT NULL DEFAULT 'COMPLETED'", []).ok();
+    }
 
     Ok(())
 }
@@ -1068,7 +1322,6 @@ pub fn delete_medicine_permanently(conn: &mut Connection, medicine_id: i64) -> R
     tx.commit()?;
     Ok(())
 }
-}
 
 /// Retrieves stock movements for a specific medicine
 pub fn fetch_stock_movements(conn: &Connection, medicine_id: i64) -> Result<Vec<StockMovement>> {
@@ -1174,9 +1427,45 @@ pub fn fetch_inventory_summary(conn: &Connection) -> Result<InventorySummaryMetr
         |row| row.get(0),
     )?;
 
-    // 5. Completed sales data (honest empty state if billing not yet active)
-    let medicines_with_sales = 0;
-    let top_selling_medicines = Vec::new();
+    // 5. Real completed sales data from completed bills
+    let medicines_with_sales: i64 = conn.query_row(
+        r#"SELECT COUNT(DISTINCT bi.medicine_id)
+           FROM bill_items bi
+           JOIN bills b ON bi.bill_id = b.id
+           WHERE b.status = 'COMPLETED'"#,
+        [],
+        |row| row.get(0),
+    ).unwrap_or(0);
+
+    let mut top_selling_stmt = conn.prepare(
+        r#"SELECT 
+            bi.medicine_id,
+            bi.medicine_name,
+            COALESCE(SUM(bi.quantity), 0) as total_qty,
+            COALESCE(SUM(bi.amount), 0.0) as total_amount
+           FROM bill_items bi
+           JOIN bills b ON bi.bill_id = b.id
+           WHERE b.status = 'COMPLETED'
+           GROUP BY bi.medicine_id, bi.medicine_name
+           ORDER BY total_qty DESC, total_amount DESC
+           LIMIT 5"#,
+    );
+
+    let mut top_selling_medicines = Vec::new();
+    if let Ok(mut stmt) = top_selling_stmt {
+        if let Ok(rows) = stmt.query_map([], |row| {
+            Ok(TopSellingMedicineItem {
+                medicine_id: row.get(0)?,
+                medicine_name: row.get(1)?,
+                total_quantity_sold: row.get(2)?,
+                total_sales_amount: row.get(3)?,
+            })
+        }) {
+            for item in rows.flatten() {
+                top_selling_medicines.push(item);
+            }
+        }
+    }
 
     Ok(InventorySummaryMetrics {
         total_medicines,
@@ -1188,6 +1477,413 @@ pub fn fetch_inventory_summary(conn: &Connection) -> Result<InventorySummaryMetr
         needs_restock_count,
         expiring_soon_count,
         expired_count,
+    })
+}
+
+/// Generates preview of the next bill number without committing
+pub fn fetch_next_bill_number_preview(conn: &Connection) -> Result<String> {
+    let store_opt = fetch_store_details(conn)?;
+    let store = match store_opt {
+        Some(s) => s,
+        None => return Ok("IM-0001".to_string()),
+    };
+
+    let prefix = store.bill_prefix.trim().to_uppercase();
+    let prefix_like = format!("{}-%", prefix);
+
+    let mut stmt = conn.prepare("SELECT bill_number FROM bills WHERE bill_number LIKE ?1")?;
+    let rows = stmt.query_map(params![prefix_like], |row| row.get::<_, String>(0))?;
+
+    let mut max_suffix = 0i64;
+    for b in rows.flatten() {
+        if let Some(suffix_str) = b.strip_prefix(&format!("{}-", prefix)) {
+            if let Ok(num) = suffix_str.parse::<i64>() {
+                if num > max_suffix {
+                    max_suffix = num;
+                }
+            }
+        }
+    }
+
+    let next_num = if max_suffix > 0 {
+        max_suffix + 1
+    } else {
+        std::cmp::max(1, store.starting_bill_number)
+    };
+
+    Ok(format!("{}-{:04}", prefix, next_num))
+}
+
+/// Fetches active medicines and their active, unexpired batches sorted by FEFO (earliest expiry first)
+pub fn fetch_saleable_medicines(conn: &Connection) -> Result<Vec<SaleableMedicine>> {
+    let mut stmt = conn.prepare(
+        r#"SELECT id, name, generic_name, manufacturer, category, barcode, unit, low_stock_threshold, is_active
+           FROM medicines
+           WHERE is_active = 1
+           ORDER BY name ASC"#
+    )?;
+
+    let mut batch_stmt = conn.prepare(
+        r#"SELECT id, medicine_id, batch_number, mfg_date, exp_date, cost_price, mrp, selling_price, stock_qty
+           FROM medicine_batches
+           WHERE medicine_id = ?1 AND is_active = 1 AND stock_qty > 0 AND exp_date >= date('now', 'localtime')
+           ORDER BY exp_date ASC"#
+    )?;
+
+    let med_rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, Option<String>>(5)?,
+            row.get::<_, String>(6)?,
+            row.get::<_, i64>(7)?,
+            row.get::<_, bool>(8)?,
+        ))
+    })?;
+
+    let mut result = Vec::new();
+
+    for r in med_rows {
+        let (id, name, generic_name, manufacturer, category, barcode, unit, low_stock_threshold, is_active) = r?;
+        let batches_rows = batch_stmt.query_map(params![id], |row| {
+            Ok(SaleableBatch {
+                id: row.get(0)?,
+                medicine_id: row.get(1)?,
+                batch_number: row.get(2)?,
+                mfg_date: row.get(3)?,
+                exp_date: row.get(4)?,
+                cost_price: row.get(5)?,
+                mrp: row.get(6)?,
+                selling_price: row.get(7)?,
+                stock_qty: row.get(8)?,
+            })
+        })?;
+
+        let mut batches = Vec::new();
+        let mut total_saleable = 0i64;
+        let mut nearest_exp: Option<String> = None;
+
+        for b in batches_rows.flatten() {
+            total_saleable += b.stock_qty;
+            if nearest_exp.is_none() {
+                nearest_exp = Some(b.exp_date.clone());
+            }
+            batches.push(b);
+        }
+
+        result.push(SaleableMedicine {
+            id,
+            name,
+            generic_name,
+            manufacturer,
+            category,
+            barcode,
+            unit,
+            low_stock_threshold,
+            is_active,
+            total_saleable_stock: total_saleable,
+            nearest_expiry_date: nearest_exp,
+            batches,
+        });
+    }
+
+    Ok(result)
+}
+
+/// Executes atomic transaction to save bill, deduct batch stock, and record audit movement
+pub fn save_bill_transaction(conn: &mut Connection, input: &SaveBillInput) -> Result<BillRecord> {
+    // 1. Validate customer name
+    if input.customer_name.trim().is_empty() {
+        return Err(make_field_error("customerName", "Customer name cannot be empty"));
+    }
+
+    // 2. Validate customer mobile (10 digits Indian starting with 6,7,8,9)
+    let clean_mobile: String = input.customer_mobile.chars().filter(|c| c.is_ascii_digit()).collect();
+    if clean_mobile.len() != 10 || !['6', '7', '8', '9'].contains(&clean_mobile.chars().next().unwrap_or('0')) {
+        return Err(make_field_error("customerMobile", "Enter a valid 10-digit Indian mobile number"));
+    }
+
+    // 3. Validate items
+    if input.items.is_empty() {
+        return Err(make_field_error("items", "Bill must contain at least one medicine item"));
+    }
+
+    // 4. Fetch store details for snapshotting and numbering
+    let store_opt = fetch_store_details(conn)?;
+    let store = store_opt.ok_or_else(|| rusqlite::Error::UserFunctionError("Store Details configuration not found".into()))?;
+
+    let tx = conn.transaction()?;
+
+    // 5. Generate atomic bill number: prefix and next sequential number
+    let prefix = store.bill_prefix.trim().to_uppercase();
+    let prefix_like = format!("{}-%", prefix);
+    
+    let mut stmt_bills = tx.prepare("SELECT bill_number FROM bills WHERE bill_number LIKE ?1")?;
+    let existing_numbers = stmt_bills.query_map(params![prefix_like], |row| row.get::<_, String>(0))?;
+
+    let mut max_suffix = 0i64;
+    for b in existing_numbers.flatten() {
+        if let Some(suffix_str) = b.strip_prefix(&format!("{}-", prefix)) {
+            if let Ok(num) = suffix_str.parse::<i64>() {
+                if num > max_suffix {
+                    max_suffix = num;
+                }
+            }
+        }
+    }
+
+    let next_num = if max_suffix > 0 {
+        max_suffix + 1
+    } else {
+        std::cmp::max(1, store.starting_bill_number)
+    };
+
+    let bill_number = format!("{}-{:04}", prefix, next_num);
+
+    // 6. Server-side totals recalculation & strict stock validation
+    let mut sub_total = 0.0f64;
+    let mut discount = 0.0f64;
+
+    for item in &input.items {
+        if item.quantity < 1 {
+            return Err(make_field_error("quantity", &format!("Quantity for '{}' must be at least 1", item.medicine_name)));
+        }
+
+        // Live check from DB
+        let batch_info: Option<(i64, String, String, f64, f64, f64, i64, i64)> = tx.query_row(
+            r#"SELECT b.medicine_id, b.batch_number, b.exp_date, b.cost_price, b.mrp, b.selling_price, b.stock_qty, m.is_active
+               FROM medicine_batches b
+               JOIN medicines m ON b.medicine_id = m.id
+               WHERE b.id = ?1 AND b.is_active = 1"#,
+            params![item.batch_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?)),
+        ).optional()?;
+
+        let (_, b_num, exp_date, _, db_mrp, _, current_stock, med_active) = match batch_info {
+            Some(info) => info,
+            None => {
+                return Err(make_field_error("batchId", &format!("Batch '{}' for medicine '{}' was not found or is inactive", item.batch_number, item.medicine_name)));
+            }
+        };
+
+        if med_active == 0 {
+            return Err(make_field_error("medicineId", &format!("Medicine '{}' is archived and cannot be billed", item.medicine_name)));
+        }
+
+        // Expiry check
+        let is_expired: bool = tx.query_row(
+            "SELECT date(?1) < date('now', 'localtime')",
+            params![exp_date],
+            |row| row.get(0),
+        ).unwrap_or(false);
+
+        if is_expired {
+            return Err(make_field_error("expDate", &format!("Batch '{}' for '{}' has expired ({}) and cannot be billed", b_num, item.medicine_name, exp_date)));
+        }
+
+        // Stock availability check
+        if current_stock < item.quantity {
+            return Err(make_field_error("quantity", &format!("Insufficient stock for '{}' (Batch {}). Available: {}, Requested: {}", item.medicine_name, b_num, current_stock, item.quantity)));
+        }
+
+        // Rate validation
+        let line_rate = if input.discount_mode == "NON_DISCOUNT" {
+            db_mrp
+        } else {
+            if item.rate < 0.0 {
+                return Err(make_field_error("rate", &format!("Rate cannot be negative for '{}'", item.medicine_name)));
+            }
+            if item.rate > db_mrp + 0.001 {
+                return Err(make_field_error("rate", &format!("Rate cannot exceed MRP for '{}'", item.medicine_name)));
+            }
+            item.rate
+        };
+
+        let line_amount = (line_rate * item.quantity as f64 * 100.0).round() / 100.0;
+        let line_mrp_total = (db_mrp * item.quantity as f64 * 100.0).round() / 100.0;
+
+        sub_total += line_mrp_total;
+        if input.discount_mode == "DISCOUNTED" {
+            discount += (line_mrp_total - line_amount);
+        }
+    }
+
+    sub_total = (sub_total * 100.0).round() / 100.0;
+    discount = (discount * 100.0).round() / 100.0;
+    let grand_total = ((sub_total - discount) * 100.0).round() / 100.0;
+
+    // GST Inclusive 18% calculation
+    let gst_total = ((grand_total * 18.0 / 118.0) * 100.0).round() / 100.0;
+    let cgst = ((gst_total / 2.0) * 100.0).round() / 100.0;
+    let sgst = ((gst_total - cgst) * 100.0).round() / 100.0;
+
+    let (bill_date, created_at): (String, String) = tx.query_row(
+        "SELECT date('now', 'localtime'), datetime('now', 'localtime')",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+
+    // Insert bill record
+    tx.execute(
+        r#"INSERT INTO bills (
+            bill_number, customer_name, customer_mobile, doctor_name, bill_date,
+            discount_mode, payment_mode, sub_total, discount, gst_total, cgst, sgst, grand_total,
+            amount_in_words, store_name, store_address, store_phone, store_email, store_gstin,
+            store_dl_1, store_dl_2, store_footer_terms, show_gstin, show_amount_in_words,
+            status, created_at
+        ) VALUES (
+            ?1, ?2, ?3, ?4, ?5,
+            ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13,
+            ?14, ?15, ?16, ?17, ?18, ?19,
+            ?20, ?21, ?22, ?23, ?24,
+            'COMPLETED', ?25
+        )"#,
+        params![
+            bill_number,
+            input.customer_name.trim(),
+            clean_mobile,
+            input.doctor_name.as_deref().map(|s| s.trim()),
+            bill_date,
+            input.discount_mode,
+            input.payment_mode,
+            sub_total,
+            discount,
+            gst_total,
+            cgst,
+            sgst,
+            grand_total,
+            "",
+            store.store_name,
+            store.address,
+            store.phone,
+            store.email,
+            store.gstin,
+            store.drug_license_1,
+            store.drug_license_2,
+            store.footer_terms,
+            if store.show_gstin_on_invoice { 1 } else { 0 },
+            if store.show_amount_in_words { 1 } else { 0 },
+            created_at,
+        ],
+    )?;
+
+    let bill_id = tx.last_insert_rowid();
+
+    // Insert bill_items, deduct batch stock, and record stock movement
+    let mut recorded_items = Vec::new();
+
+    for item in &input.items {
+        let (current_qty, cost_p, db_mrp, db_sp): (i64, f64, f64, f64) = tx.query_row(
+            "SELECT stock_qty, cost_price, mrp, selling_price FROM medicine_batches WHERE id = ?1",
+            params![item.batch_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )?;
+
+        let line_rate = if input.discount_mode == "NON_DISCOUNT" { db_mrp } else { item.rate };
+        let line_amount = (line_rate * item.quantity as f64 * 100.0).round() / 100.0;
+
+        tx.execute(
+            r#"INSERT INTO bill_items (
+                bill_id, medicine_id, batch_id, medicine_name, batch_number, exp_date,
+                unit, quantity, cost_price, mrp, selling_price, rate, amount
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)"#,
+            params![
+                bill_id,
+                item.medicine_id,
+                item.batch_id,
+                item.medicine_name.trim(),
+                item.batch_number.trim(),
+                item.exp_date.trim(),
+                item.unit.trim(),
+                item.quantity,
+                cost_p,
+                db_mrp,
+                db_sp,
+                line_rate,
+                line_amount,
+            ],
+        )?;
+
+        let item_id = tx.last_insert_rowid();
+
+        // Deduct batch stock
+        let new_qty = current_qty - item.quantity;
+        tx.execute(
+            "UPDATE medicine_batches SET stock_qty = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+            params![new_qty, item.batch_id],
+        )?;
+
+        // Record stock movement (type SALE)
+        tx.execute(
+            r#"INSERT INTO stock_movements (
+                medicine_id, batch_id, movement_type, quantity, previous_qty, new_qty, reason, reference_id, created_at
+            ) VALUES (?1, ?2, 'SALE', ?3, ?4, ?5, 'Counter Sale', ?6, CURRENT_TIMESTAMP)"#,
+            params![
+                item.medicine_id,
+                item.batch_id,
+                item.quantity,
+                current_qty,
+                new_qty,
+                bill_number,
+            ],
+        )?;
+
+        recorded_items.push(BillItemRecord {
+            id: item_id,
+            bill_id,
+            medicine_id: item.medicine_id,
+            batch_id: item.batch_id,
+            medicine_name: item.medicine_name.clone(),
+            batch_number: item.batch_number.clone(),
+            exp_date: item.exp_date.clone(),
+            unit: item.unit.clone(),
+            quantity: item.quantity,
+            cost_price: cost_p,
+            mrp: db_mrp,
+            selling_price: db_sp,
+            rate: line_rate,
+            amount: line_amount,
+        });
+    }
+
+    tx.commit()?;
+
+    let store_snapshot = BillStoreSnapshot {
+        store_name: store.store_name,
+        address: store.address,
+        phone: store.phone,
+        email: store.email,
+        gstin: store.gstin,
+        drug_license_1: store.drug_license_1,
+        drug_license_2: store.drug_license_2,
+        footer_terms: store.footer_terms,
+        show_gstin: store.show_gstin_on_invoice,
+        show_amount_in_words: store.show_amount_in_words,
+    };
+
+    Ok(BillRecord {
+        id: bill_id,
+        bill_number,
+        customer_name: input.customer_name.trim().to_string(),
+        customer_mobile: clean_mobile,
+        doctor_name: input.doctor_name.as_deref().map(|s| s.trim().to_string()),
+        bill_date,
+        discount_mode: input.discount_mode.clone(),
+        payment_mode: input.payment_mode.clone(),
+        sub_total,
+        discount,
+        gst_total,
+        cgst,
+        sgst,
+        grand_total,
+        amount_in_words: "".to_string(),
+        store_snapshot,
+        items: recorded_items,
+        status: "COMPLETED".to_string(),
+        created_at,
     })
 }
 

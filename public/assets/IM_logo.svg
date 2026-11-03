@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80" width="320" height="80">
+  <defs>
+    <linearGradient id="emblemGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Emblem Background Box -->
+  <rect x="10" y="10" width="60" height="60" rx="14" fill="url(#emblemGrad)" stroke="#334155" stroke-width="1.5"/>
+
+  <!-- Medical Cross in Vibrant Green -->
+  <rect x="36" y="22" width="8" height="36" rx="3.5" fill="#22c55e"/>
+  <rect x="22" y="36" width="36" height="8" rx="3.5" fill="#22c55e"/>
+
+  <!-- Central Pulse / ECG White Accent Line -->
+  <path d="M26 40 H31 L34 33 L37 47 L41 40 H46" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Online Green Status Indicator Dot -->
+  <circle cx="62" cy="18" r="4.5" fill="#22c55e" stroke="#ffffff" stroke-width="2"/>
+
+  <!-- Brand Typography -->
+  <text x="84" y="44" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="28" font-weight="800" fill="#0f172a" letter-spacing="-0.5">IM <tspan font-weight="900" fill="#1e3a8a">MEDICOS</tspan><tspan fill="#22c55e">.</tspan></text>
+
+  <!-- Tagline -->
+  <text x="86" y="62" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10.5" font-weight="700" fill="#64748b" letter-spacing="1.5">MEDICAL BILLING SOFTWARE</text>
+</svg>

@@ -265,6 +265,33 @@ fn get_inventory_summary(app: tauri::AppHandle) -> Result<db::InventorySummaryMe
     db::fetch_inventory_summary(&conn).map_err(|e| e.to_string())
 }
 
+/// Generates next sequential bill number preview
+#[tauri::command]
+fn get_next_bill_number(app: tauri::AppHandle) -> Result<String, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::fetch_next_bill_number_preview(&conn).map_err(|e| e.to_string())
+}
+
+/// Fetches saleable medicines with FEFO-sorted unexpired batches
+#[tauri::command]
+fn get_saleable_medicines(app: tauri::AppHandle) -> Result<Vec<db::SaleableMedicine>, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::fetch_saleable_medicines(&conn).map_err(|e| e.to_string())
+}
+
+/// Atomically saves bill, deducts stock, records stock movement, snapshots store & items
+#[tauri::command]
+fn save_bill(app: tauri::AppHandle, bill: db::SaveBillInput) -> Result<db::BillRecord, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let mut conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::save_bill_transaction(&mut conn, &bill).map_err(format_error)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -301,7 +328,10 @@ pub fn run() {
             can_delete_medicine,
             delete_medicine,
             get_stock_movements,
-            get_inventory_summary
+            get_inventory_summary,
+            get_next_bill_number,
+            get_saleable_medicines,
+            save_bill
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

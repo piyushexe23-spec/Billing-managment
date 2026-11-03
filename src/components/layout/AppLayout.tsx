@@ -46,7 +46,7 @@ interface NavItemConfig {
 
 const NAV_ITEMS: NavItemConfig[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, isImplemented: true },
-  { key: "new_bill", label: "New Bill", icon: Receipt, isImplemented: false, phaseText: "Phase 4" },
+  { key: "new_bill", label: "New Bill", icon: Receipt, isImplemented: true },
   { key: "bill_history", label: "Bill History", icon: History, isImplemented: false, phaseText: "Phase 4" },
   { key: "medicines", label: "Medicines", icon: Pill, isImplemented: true },
   { key: "customers", label: "Customers", icon: Users, isImplemented: false, phaseText: "Phase 3" },

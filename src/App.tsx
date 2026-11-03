@@ -3,6 +3,7 @@ import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { StoreDetailsPage } from "@/pages/StoreDetailsPage";
 import { MedicinesPage } from "@/pages/MedicinesPage";
+import { NewBillPage } from "@/pages/NewBillPage";
 import { AppLayout, NavItemKey } from "@/components/layout/AppLayout";
 import { authService, AuthUser } from "@/services/authService";
 import { Loader2, ShieldCheck } from "lucide-react";
@@ -110,6 +111,8 @@ export const App: React.FC = () => {
         <StoreDetailsPage />
       ) : activeNav === "medicines" ? (
         <MedicinesPage />
+      ) : activeNav === "new_bill" ? (
+        <NewBillPage />
       ) : (
         <DashboardPage />
       )}
