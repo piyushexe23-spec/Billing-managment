@@ -464,9 +464,11 @@ console.log("\nTest 8: Invoice PDF & Print Template Specifications");
   assert(!invoicePdfSrc.includes("* All prices are inclusive of GST"), "InvoicePdfDocument must not contain inclusive footnote");
   assert(!invoicePrintSrc.includes("* All prices are inclusive of GST"), "invoicePrintService must not contain inclusive footnote");
 
-  // 3. Logo handling and snapshot
-  assert(invoicePdfSrc.includes("max-w-[70mm] max-h-[22mm]"), "InvoicePdfDocument sizes logo to max 70mm x 22mm preserving aspect ratio");
-  assert(invoicePrintSrc.includes("max-width: 70mm; max-height: 22mm"), "invoicePrintService sizes logo to max 70mm x 22mm");
+  // 3. Logo handling and snapshot: height-limited to 20mm and max width 70mm, auto-trimmed
+  assert(invoicePdfSrc.includes("max-w-[70mm] max-h-[20mm]"), "InvoicePdfDocument sizes logo to max 70mm x 20mm preserving aspect ratio");
+  assert(invoicePrintSrc.includes("max-width: 70mm; max-height: 20mm"), "invoicePrintService sizes logo to max 70mm x 20mm");
+  assert(invoicePrintSrc.includes("trimImageWhitespace"), "invoicePrintService implements auto-trimming of logo whitespace");
+  assert(invoicePdfSrc.includes("trimImageWhitespace"), "InvoicePdfDocument uses auto-trimmed logo");
   assert(!invoicePdfSrc.includes("Medical Billing Software"), "InvoicePdfDocument must not have 'Medical Billing Software'");
   assert(!invoicePrintSrc.includes("MEDICAL BILLING SOFTWARE"), "invoicePrintService must not have 'MEDICAL BILLING SOFTWARE'");
   assert(!invoicePdfSrc.includes("Original For Recipient"), "Removed 'Original For Recipient'");
@@ -489,6 +491,13 @@ console.log("\nTest 8: Invoice PDF & Print Template Specifications");
   assert(invoicePrintSrc.includes("TAX INVOICE / PHARMACY BILL"), "Print service has TAX INVOICE / PHARMACY BILL");
   assert(invoicePdfSrc.includes("formatDisplayDate(bill.billDate)"), "Formats date as DD/MM/YYYY");
   assert(invoicePrintSrc.includes("formatDisplayDate(bill.billDate)"), "Print service formats date as DD/MM/YYYY");
+  assert(invoicePdfSrc.includes("Mobile No. :"), "InvoicePdfDocument has Mobile No. : label");
+  assert(invoicePrintSrc.includes("Mobile No. :"), "invoicePrintService has Mobile No. : label");
+  assert(!invoicePdfSrc.includes("_____"), "Doctor Name has no underscore characters in InvoicePdfDocument");
+  assert(!invoicePrintSrc.includes("_____"), "Doctor Name has no underscore characters in invoicePrintService");
+  assert(invoicePrintSrc.includes("margin: 8mm"), "Print CSS sets @page margin to 8mm");
+  assert(invoicePdfSrc.includes("formatExpiryForInvoice"), "InvoicePdfDocument uses formatExpiryForInvoice");
+  assert(invoicePrintSrc.includes("formatExpiryForInvoice"), "invoicePrintService uses formatExpiryForInvoice");
 
   // 7. Multi-page pagination contracts
   assert(invoicePdfSrc.includes("SINGLE_PAGE_MAX"), "InvoicePdfDocument defines pagination threshold");

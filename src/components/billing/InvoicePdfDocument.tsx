@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { BillRecord } from "@/types/billing";
 import { formatIndianCurrency, formatDisplayDate } from "@/lib/billingConfig";
+import { trimImageWhitespace, formatExpiryForInvoice } from "@/lib/invoicePrintService";
 
 interface InvoicePdfDocumentProps {
   bill: BillRecord;
@@ -23,6 +24,23 @@ export const InvoicePdfDocument: React.FC<InvoicePdfDocumentProps> = ({ bill }) 
     }
   }
 
+  // Auto-trimmed in-memory logo state
+  const [trimmedLogoSrc, setTrimmedLogoSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (logoSrc) {
+      trimImageWhitespace(logoSrc).then((trimmed) => {
+        if (isMounted) setTrimmedLogoSrc(trimmed);
+      });
+    } else {
+      setTrimmedLogoSrc(null);
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [logoSrc]);
+
   // Parse terms bullets without hardcoded fallback
   const termsBullets = store.footerTerms
     ? store.footerTerms
@@ -30,6 +48,17 @@ export const InvoicePdfDocument: React.FC<InvoicePdfDocumentProps> = ({ bill }) 
         .map((t) => t.trim().replace(/^\d+[\.\)]\s*/, ""))
         .filter(Boolean)
     : [];
+
+  // Formatted mobile number with +91 prefix
+  const cleanedMobile = bill.customerMobile
+    ? bill.customerMobile.replace(/^\+?91\s*/, "").trim()
+    : "";
+  const formattedMobile = cleanedMobile ? `+91 ${cleanedMobile}` : "";
+
+  // Formatted doctor name (no underscores)
+  const formattedDoctor = bill.doctorName
+    ? `Dr. ${bill.doctorName.replace(/^Dr\.?\s*/i, "").trim()}`
+    : "";
 
   // Pagination calculation: up to 18 items fit on single page with footer
   const SINGLE_PAGE_MAX = 18;
@@ -63,7 +92,7 @@ export const InvoicePdfDocument: React.FC<InvoicePdfDocumentProps> = ({ bill }) 
     cursor = FIRST_PAGE_MAX_MULTI;
     pages.push({
       pageNumber: 1,
-      totalPages: 1, // updated below
+      totalPages: 1,
       items: p1Items,
       startIndex: 0,
       isLastPage: false,
@@ -113,13 +142,13 @@ export const InvoicePdfDocument: React.FC<InvoicePdfDocumentProps> = ({ bill }) 
       {pages.map((page) => (
         <div
           key={`invoice-page-${page.pageNumber}`}
-          className={`a4-page w-[210mm] max-w-[210mm] mx-auto p-[6mm] box-border bg-white border border-slate-300 print:border-none shadow-md print:shadow-none print:m-0 print:p-[4mm] ${
+          className={`a4-page w-[210mm] max-w-[210mm] mx-auto p-[8mm] box-border bg-white border border-slate-300 print:border-none shadow-md print:shadow-none print:m-0 print:p-0 ${
             !page.isLastPage ? "print:break-after-page mb-6 print:mb-0" : ""
           }`}
           style={{ boxSizing: "border-box" }}
         >
-          {/* Thin Navy Outer Page Border Container */}
-          <div className="border-[1.5px] border-[#0b3a73] p-[6mm] box-border bg-white flex flex-col justify-start">
+          {/* Thin Navy Outer Page Border Container: margin 8mm guarantees never clipped */}
+          <div className="page-border-container border-[1.5px] border-[#0b3a73] p-[5mm] box-border bg-white flex flex-col justify-start">
             
             {/* 1. Header with 3 Columns & Thin Vertical Dividers */}
             <div className="flex items-center justify-between pb-2.5">
@@ -127,11 +156,11 @@ export const InvoicePdfDocument: React.FC<InvoicePdfDocumentProps> = ({ bill }) 
               {/* Left Column: Logo Block or Store Name */}
               <div className="w-[36%] shrink-0 pr-3 flex flex-col justify-center min-h-[50px]">
                 {logoSrc ? (
-                  <div className="max-w-[70mm] max-h-[22mm] flex items-center">
+                  <div className="max-w-[70mm] max-h-[20mm] h-[20mm] flex items-center justify-start">
                     <img
-                      src={logoSrc}
+                      src={trimmedLogoSrc || logoSrc}
                       alt={store.storeName || "Pharmacy Logo"}
-                      className="max-w-[70mm] max-h-[22mm] object-contain object-left"
+                      className="max-w-[70mm] max-h-[20mm] h-auto w-auto object-contain object-left"
                       style={{ imageRendering: "auto" }}
                     />
                   </div>
@@ -223,49 +252,54 @@ export const InvoicePdfDocument: React.FC<InvoicePdfDocumentProps> = ({ bill }) 
               </span>
             </div>
 
-            {/* 3. Underline-Style Meta Fields (No Boxes) */}
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11px] mb-2 px-1">
-              {/* Left Column */}
-              <div className="space-y-1">
+            {/* 3. Underline-Style Meta Fields (No Boxes, Same Font & Navy Color) */}
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11px] mb-2 px-1">
+              {/* Left Column: Bill No., Date, Payment Mode */}
+              <div className="space-y-1.5">
                 <div className="flex items-baseline">
-                  <span className="font-bold text-[#0b3a73] w-20 shrink-0">Bill No. :</span>
+                  <span className="font-bold text-[#0b3a73] w-28 shrink-0">Bill No. :</span>
                   <span className="border-b border-slate-400 font-bold text-slate-900 pb-0.5 grow">
                     {bill.billNumber}
                   </span>
                 </div>
                 <div className="flex items-baseline">
-                  <span className="font-bold text-[#0b3a73] w-20 shrink-0">Date :</span>
+                  <span className="font-bold text-[#0b3a73] w-28 shrink-0">Date :</span>
                   <span className="border-b border-slate-400 font-semibold text-slate-800 pb-0.5 grow">
                     {formatDisplayDate(bill.billDate)}
-                    <span className="ml-3 text-[9.5px] font-normal text-slate-500">
-                      (Mode: {bill.paymentMode})
-                    </span>
+                  </span>
+                </div>
+                <div className="flex items-baseline">
+                  <span className="font-bold text-[#0b3a73] w-28 shrink-0">Payment Mode :</span>
+                  <span className="border-b border-slate-400 font-semibold text-slate-800 pb-0.5 grow">
+                    {bill.paymentMode || "CASH"}
                   </span>
                 </div>
               </div>
 
-              {/* Right Column */}
-              <div className="space-y-1">
-                <div>
-                  <div className="flex items-baseline">
-                    <span className="font-bold text-[#0b3a73] w-36 shrink-0">
-                      Patient / Customer Name :
-                    </span>
-                    <span className="border-b border-slate-400 font-bold text-slate-900 pb-0.5 grow">
-                      {bill.customerName}
-                    </span>
-                  </div>
-                  {bill.customerMobile && (
-                    <div className="text-[9.5px] text-slate-500 pl-36 pt-0.5 font-medium">
-                      Mobile: +91 {bill.customerMobile}
-                    </div>
-                  )}
-                </div>
-
+              {/* Right Column: Patient / Customer Name, Mobile No., Doctor Name */}
+              <div className="space-y-1.5">
                 <div className="flex items-baseline">
-                  <span className="font-bold text-[#0b3a73] w-36 shrink-0">Doctor Name :</span>
-                  <span className="border-b border-slate-400 text-slate-800 pb-0.5 grow font-medium">
-                    {bill.doctorName ? `Dr. ${bill.doctorName.replace(/^Dr\.?\s*/i, "")}` : "________________________"}
+                  <span className="font-bold text-[#0b3a73] w-44 shrink-0">
+                    Patient / Customer Name :
+                  </span>
+                  <span className="border-b border-slate-400 font-bold text-slate-900 pb-0.5 grow">
+                    {bill.customerName}
+                  </span>
+                </div>
+                <div className="flex items-baseline">
+                  <span className="font-bold text-[#0b3a73] w-44 shrink-0">
+                    Mobile No. :
+                  </span>
+                  <span className="border-b border-slate-400 font-semibold text-slate-800 pb-0.5 grow inline-block min-h-[16px]">
+                    {formattedMobile || "\u00A0"}
+                  </span>
+                </div>
+                <div className="flex items-baseline">
+                  <span className="font-bold text-[#0b3a73] w-44 shrink-0">
+                    Doctor Name :
+                  </span>
+                  <span className="border-b border-slate-400 text-slate-800 pb-0.5 grow font-medium inline-block min-h-[16px]">
+                    {formattedDoctor || "\u00A0"}
                   </span>
                 </div>
               </div>
@@ -301,7 +335,7 @@ export const InvoicePdfDocument: React.FC<InvoicePdfDocumentProps> = ({ bill }) 
                         {it.batchNumber}
                       </td>
                       <td className="py-1 px-1.5 border border-slate-300 text-center text-slate-800">
-                        {it.expDate}
+                        {formatExpiryForInvoice(it.expDate)}
                       </td>
                       <td className="py-1 px-1.5 border border-slate-300 text-center font-bold text-slate-900">
                         {it.quantity}
