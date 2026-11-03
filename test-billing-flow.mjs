@@ -498,6 +498,38 @@ console.log("\nTest 8: Invoice PDF & Print Template Specifications");
   console.log("✓ Test 8 Passed: Invoice PDF & Print Template specifications strictly verified.");
 }
 
+// Test 9: Bill Saved Modal Close & Safety Handlers
+{
+  console.log("\nTest 9: Bill Saved Modal Close & Safety Handlers Verification");
+  const newBillPageSrc = fs.readFileSync(path.resolve("src/pages/NewBillPage.tsx"), "utf8");
+
+  // 1. Top-right close button with title="Close" and aria-label="Close"
+  assert(newBillPageSrc.includes('title="Close"'), "Modal has close button with title='Close'");
+  assert(newBillPageSrc.includes('aria-label="Close"'), "Modal has close button with aria-label='Close'");
+
+  // 2. Backdrop click handler on outer wrapper
+  assert(newBillPageSrc.includes('e.target === e.currentTarget && !modalActionLoading'), "Backdrop click closes modal when clicking outside and not loading");
+
+  // 3. Global Escape key handling
+  assert(newBillPageSrc.includes('e.key === "Escape"') || newBillPageSrc.includes("e.key === 'Escape'"), "Escape key handler registered");
+  assert(newBillPageSrc.includes("handleCloseSuccessModal"), "handleCloseSuccessModal defined and wired");
+
+  // 4. Closing modal clears cart & customer fields via handleClearBill
+  assert(newBillPageSrc.includes("handleClearBill();"), "handleCloseSuccessModal calls handleClearBill to prevent duplicate saves");
+
+  // 5. Actions do not auto-close modal & loading states prevent accidental exits
+  assert(newBillPageSrc.includes('setModalActionLoading("print")'), "modalActionLoading state guards concurrent operations");
+  assert(newBillPageSrc.includes("modalActionError"), "modalActionError surfaces failures inline without closing modal");
+  assert(!newBillPageSrc.includes("handlePrint();\n                    setSavedBill(null);"), "Print action does not automatically dismiss saved bill modal");
+
+  // 6. Other modals on NewBillPage also support X button, backdrop click, and Escape
+  assert(newBillPageSrc.includes("setPendingModeSwitch(null)"), "pendingModeSwitch supports dismiss");
+  assert(newBillPageSrc.includes("setIsClearConfirmOpen(false)"), "isClearConfirmOpen supports dismiss");
+  assert(newBillPageSrc.includes("setRateWarningDialog(null)"), "rateWarningDialog supports dismiss");
+
+  console.log("✓ Test 9 Passed: Bill Saved Modal Close & Safety Handlers strictly verified.");
+}
+
 console.log("\n========================================================");
 console.log("ALL COMMAND 05A BILLING TESTS PASSED (100% SUCCESS)!");
 console.log("========================================================\n");

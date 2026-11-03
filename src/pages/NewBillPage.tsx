@@ -75,6 +75,8 @@ export const NewBillPage: React.FC = () => {
   const [savedBill, setSavedBill] = useState<BillRecord | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [modalActionLoading, setModalActionLoading] = useState<string | null>(null);
+  const [modalActionError, setModalActionError] = useState<string | null>(null);
   const [rateWarningDialog, setRateWarningDialog] = useState<{
     lineId: string;
     medicineName: string;
@@ -357,6 +359,85 @@ export const NewBillPage: React.FC = () => {
     setIsClearConfirmOpen(false);
     searchInputRef.current?.focus();
   };
+
+  // Close Success Modal handler (behaves like New Bill: cleans form, cart, errors, totals)
+  const handleCloseSuccessModal = () => {
+    if (modalActionLoading) return;
+    setSavedBill(null);
+    setIsPreviewOpen(false);
+    setModalActionError(null);
+    handleClearBill();
+  };
+
+  const handlePrintModalAction = () => {
+    if (!savedBill || modalActionLoading) return;
+    setModalActionError(null);
+    setModalActionLoading("print");
+    try {
+      printInvoice(savedBill);
+    } catch (err: any) {
+      setModalActionError(err?.message || "Failed to initiate printing");
+    } finally {
+      setTimeout(() => {
+        setModalActionLoading(null);
+      }, 600);
+    }
+  };
+
+  const handlePdfModalAction = () => {
+    if (!savedBill || modalActionLoading) return;
+    setModalActionError(null);
+    setModalActionLoading("pdf");
+    try {
+      downloadInvoicePdf(savedBill);
+    } catch (err: any) {
+      setModalActionError(err?.message || "Failed to save invoice PDF");
+    } finally {
+      setTimeout(() => {
+        setModalActionLoading(null);
+      }, 600);
+    }
+  };
+
+  const handlePreviewModalAction = () => {
+    if (!savedBill || modalActionLoading) return;
+    setModalActionError(null);
+    try {
+      setIsPreviewOpen(true);
+    } catch (err: any) {
+      setModalActionError(err?.message || "Failed to preview invoice");
+    }
+  };
+
+  // Global Escape key handler for all modals
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (isPreviewOpen) {
+          setIsPreviewOpen(false);
+        } else if (savedBill) {
+          if (!modalActionLoading) {
+            handleCloseSuccessModal();
+          }
+        } else if (pendingModeSwitch) {
+          setPendingModeSwitch(null);
+        } else if (isClearConfirmOpen) {
+          setIsClearConfirmOpen(false);
+        } else if (rateWarningDialog) {
+          setRateWarningDialog(null);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isPreviewOpen,
+    savedBill,
+    modalActionLoading,
+    pendingModeSwitch,
+    isClearConfirmOpen,
+    rateWarningDialog,
+  ]);
 
   // Form submission and bill save handler
   const handleSaveBill = async (andPrint: boolean = false) => {
@@ -962,8 +1043,32 @@ export const NewBillPage: React.FC = () => {
       {/* SUCCESS MODAL: Bill Saved                                */}
       {/* ======================================================== */}
       {savedBill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-medical-navy-950/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl border border-medical-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-medical-navy-950/60 backdrop-blur-xs p-4 overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !modalActionLoading) {
+              handleCloseSuccessModal();
+            }
+          }}
+        >
+          <div
+            className="relative bg-white rounded-2xl border border-medical-slate-200 p-6 max-w-md w-full shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top-right visible Close (X) button with tooltip */}
+            <button
+              type="button"
+              title="Close"
+              aria-label="Close"
+              disabled={!!modalActionLoading}
+              onClick={handleCloseSuccessModal}
+              className={`absolute top-4 right-4 p-1.5 rounded-lg text-medical-slate-400 hover:text-medical-navy-950 hover:bg-medical-slate-100 transition-colors ${
+                modalActionLoading ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
+              }`}
+            >
+              <X className="w-5 h-5" />
+            </button>
+
             <div className="w-12 h-12 rounded-full bg-medical-green-100 text-medical-green-700 flex items-center justify-center mx-auto">
               <CheckCircle2 className="w-7 h-7" />
             </div>
@@ -993,31 +1098,52 @@ export const NewBillPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Error Message banner if action fails */}
+            {modalActionError && (
+              <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center justify-between gap-2 font-medium">
+                <div className="flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{modalActionError}</span>
+                </div>
+                <button
+                  type="button"
+                  title="Dismiss error"
+                  onClick={() => setModalActionError(null)}
+                  className="text-red-500 hover:text-red-700 p-0.5 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-2 pt-2">
               <Button
                 type="button"
-                onClick={() => printInvoice(savedBill)}
-                className="h-10 text-xs font-bold bg-medical-navy-900 text-white hover:bg-medical-navy-800 flex items-center justify-center gap-1.5"
+                disabled={!!modalActionLoading}
+                onClick={handlePrintModalAction}
+                className="h-10 text-xs font-bold bg-medical-navy-900 text-white hover:bg-medical-navy-800 flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Printer className="w-3.5 h-3.5" />
-                Print Invoice
+                {modalActionLoading === "print" ? "Printing..." : "Print Invoice"}
               </Button>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => downloadInvoicePdf(savedBill)}
-                className="h-10 text-xs font-bold border-medical-slate-300 text-medical-navy-950 hover:bg-slate-50 flex items-center justify-center gap-1.5"
+                disabled={!!modalActionLoading}
+                onClick={handlePdfModalAction}
+                className="h-10 text-xs font-bold border-medical-slate-300 text-medical-navy-950 hover:bg-slate-50 flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <FileDown className="w-3.5 h-3.5" />
-                Save PDF
+                {modalActionLoading === "pdf" ? "Saving..." : "Save PDF"}
               </Button>
             </div>
 
             <Button
               type="button"
               variant="outline"
-              onClick={() => setIsPreviewOpen(true)}
-              className="w-full h-10 text-xs font-bold border-medical-slate-300 text-medical-navy-950 hover:bg-slate-50 flex items-center justify-center gap-1.5"
+              disabled={!!modalActionLoading}
+              onClick={handlePreviewModalAction}
+              className="w-full h-10 text-xs font-bold border-medical-slate-300 text-medical-navy-950 hover:bg-slate-50 flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Eye className="w-4 h-4" />
               Preview Invoice
@@ -1026,11 +1152,9 @@ export const NewBillPage: React.FC = () => {
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
-                setSavedBill(null);
-                handleClearBill();
-              }}
-              className="w-full h-10 text-xs font-bold bg-medical-green-50 text-medical-green-800 border-medical-green-200 hover:bg-medical-green-100 flex items-center justify-center gap-1.5"
+              disabled={!!modalActionLoading}
+              onClick={handleCloseSuccessModal}
+              className="w-full h-10 text-xs font-bold bg-medical-green-50 text-medical-green-800 border-medical-green-200 hover:bg-medical-green-100 flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               New Bill
@@ -1043,8 +1167,16 @@ export const NewBillPage: React.FC = () => {
       {/* INVOICE PREVIEW MODAL                                    */}
       {/* ======================================================== */}
       {isPreviewOpen && savedBill && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-medical-navy-950/80 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-medical-navy-950/80 backdrop-blur-xs p-4 overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsPreviewOpen(false);
+          }}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between border-b pb-3">
               <h3 className="font-bold text-sm text-medical-navy-950 flex items-center gap-2">
                 <Receipt className="w-4 h-4 text-medical-green-600" />
@@ -1054,7 +1186,7 @@ export const NewBillPage: React.FC = () => {
                 <Button
                   size="sm"
                   onClick={() => printInvoice(savedBill)}
-                  className="h-8 text-xs bg-medical-navy-900 text-white"
+                  className="h-8 text-xs bg-medical-navy-900 text-white cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5 mr-1" />
                   Print
@@ -1063,15 +1195,17 @@ export const NewBillPage: React.FC = () => {
                   size="sm"
                   variant="outline"
                   onClick={() => downloadInvoicePdf(savedBill)}
-                  className="h-8 text-xs"
+                  className="h-8 text-xs cursor-pointer"
                 >
                   <FileDown className="w-3.5 h-3.5 mr-1" />
                   Save PDF
                 </Button>
                 <button
                   type="button"
+                  title="Close"
+                  aria-label="Close"
                   onClick={() => setIsPreviewOpen(false)}
-                  className="p-1 rounded text-slate-400 hover:text-slate-700"
+                  className="p-1 rounded text-slate-400 hover:text-slate-700 cursor-pointer"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -1091,13 +1225,32 @@ export const NewBillPage: React.FC = () => {
       {/* MODE SWITCH CONFIRMATION MODAL                           */}
       {/* ======================================================== */}
       {pendingModeSwitch && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-medical-navy-950/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl border border-medical-slate-200 p-6 max-w-sm w-full shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-medical-navy-950/60 backdrop-blur-xs p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setPendingModeSwitch(null);
+          }}
+        >
+          <div
+            className="relative bg-white rounded-2xl border border-medical-slate-200 p-6 max-w-sm w-full shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top-right close button */}
+            <button
+              type="button"
+              title="Close"
+              aria-label="Close"
+              onClick={() => setPendingModeSwitch(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-medical-slate-400 hover:text-medical-navy-950 hover:bg-medical-slate-100 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-amber-100 text-amber-700 shrink-0">
                 <AlertTriangle className="w-5 h-5" />
               </div>
-              <div>
+              <div className="pr-6">
                 <h3 className="text-sm font-bold text-medical-navy-950">Switch Billing Mode?</h3>
                 <p className="text-xs text-medical-slate-500">
                   Switching to {pendingModeSwitch === "NON_DISCOUNT" ? "Non-Discount" : "Discounted"} mode will reset custom line rates to default.
@@ -1111,6 +1264,7 @@ export const NewBillPage: React.FC = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => setPendingModeSwitch(null)}
+                className="cursor-pointer"
               >
                 Cancel
               </Button>
@@ -1118,7 +1272,7 @@ export const NewBillPage: React.FC = () => {
                 type="button"
                 size="sm"
                 onClick={() => executeModeSwitch(pendingModeSwitch)}
-                className="bg-amber-600 text-white hover:bg-amber-700"
+                className="bg-amber-600 text-white hover:bg-amber-700 cursor-pointer"
               >
                 Confirm &amp; Reset Rates
               </Button>
@@ -1131,13 +1285,32 @@ export const NewBillPage: React.FC = () => {
       {/* CLEAR BILL CONFIRMATION MODAL                            */}
       {/* ======================================================== */}
       {isClearConfirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-medical-navy-950/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl border border-medical-slate-200 p-6 max-w-sm w-full shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-medical-navy-950/60 backdrop-blur-xs p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsClearConfirmOpen(false);
+          }}
+        >
+          <div
+            className="relative bg-white rounded-2xl border border-medical-slate-200 p-6 max-w-sm w-full shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top-right close button */}
+            <button
+              type="button"
+              title="Close"
+              aria-label="Close"
+              onClick={() => setIsClearConfirmOpen(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-medical-slate-400 hover:text-medical-navy-950 hover:bg-medical-slate-100 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-red-100 text-red-700 shrink-0">
                 <RotateCcw className="w-5 h-5" />
               </div>
-              <div>
+              <div className="pr-6">
                 <h3 className="text-sm font-bold text-medical-navy-950">Clear Current Bill?</h3>
                 <p className="text-xs text-medical-slate-500">
                   All {items.length} items and entered customer details will be cleared.
@@ -1151,6 +1324,7 @@ export const NewBillPage: React.FC = () => {
                 variant="outline"
                 size="sm"
                 onClick={() => setIsClearConfirmOpen(false)}
+                className="cursor-pointer"
               >
                 Cancel
               </Button>
@@ -1158,7 +1332,7 @@ export const NewBillPage: React.FC = () => {
                 type="button"
                 size="sm"
                 onClick={handleClearBill}
-                className="bg-red-600 text-white hover:bg-red-700"
+                className="bg-red-600 text-white hover:bg-red-700 cursor-pointer"
               >
                 Yes, Clear
               </Button>
@@ -1171,13 +1345,32 @@ export const NewBillPage: React.FC = () => {
       {/* RATE BELOW COST PRICE WARNING DIALOG                     */}
       {/* ======================================================== */}
       {rateWarningDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-medical-navy-950/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl border border-medical-slate-200 p-6 max-w-sm w-full shadow-2xl space-y-4">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-medical-navy-950/60 backdrop-blur-xs p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setRateWarningDialog(null);
+          }}
+        >
+          <div
+            className="relative bg-white rounded-2xl border border-medical-slate-200 p-6 max-w-sm w-full shadow-2xl space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top-right close button */}
+            <button
+              type="button"
+              title="Close"
+              aria-label="Close"
+              onClick={() => setRateWarningDialog(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-lg text-medical-slate-400 hover:text-medical-navy-950 hover:bg-medical-slate-100 transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-amber-100 text-amber-700 shrink-0">
                 <AlertTriangle className="w-5 h-5" />
               </div>
-              <div>
+              <div className="pr-6">
                 <h3 className="text-sm font-bold text-medical-navy-950">Selling Below Cost Price</h3>
                 <p className="text-xs text-medical-slate-600">
                   Selling rate for <strong className="text-medical-navy-950">{rateWarningDialog.medicineName}</strong> is below internal purchase cost.
@@ -1190,7 +1383,7 @@ export const NewBillPage: React.FC = () => {
                 type="button"
                 size="sm"
                 onClick={() => setRateWarningDialog(null)}
-                className="bg-amber-600 text-white hover:bg-amber-700"
+                className="bg-amber-600 text-white hover:bg-amber-700 cursor-pointer"
               >
                 I Understand &amp; Confirm
               </Button>
