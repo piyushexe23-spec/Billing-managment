@@ -56,12 +56,24 @@ All development strictly adheres to the rule:
 - [x] Form state management with "Unsaved Changes" indicator, reset confirmation, and validation errors
 - [x] Comprehensive test suite expanded to 30 tests (`npm test` 100% passing)
 
-### Phase 4: Pharmacy Medicine Master & Inventory (Pending Approval)
-- [ ] Medicine directory with batch numbers, expiry dates, HSN codes, MRP, purchase rates
-- [ ] Real-time stock calculation and expiry alerts
-- [ ] Rapid search by trade name and generic composition
+### Phase 4: Pharmacy Medicine Master & Inventory (COMPLETED — Command 04)
+- [x] Complete Medicine Inventory Dashboard (`MedicinesPage.tsx`) accessible via sidebar navigation
+- [x] 4 Live Summary Cards (Total Meds & Units, Top Selling Meds with honest billing empty state, Low/Out-of-Stock clickable filter, 10-day Expiring Soon & Expired clickable filter)
+- [x] Comprehensive Medicine Listing Table with configurable pagination (10, 25, 50 rows), sorting, and visual status badges
+- [x] Fast multi-field search (Name, Generic, Manufacturer, Category, Barcode, Batch Number)
+- [x] Advanced Filter bar (Stock Status, Expiry Window, Manufacturer, Category) with Clear Filters
+- [x] Add Single Medicine modal (`AddMedicineModal.tsx`) with opening batch, pricing anomaly warning review
+- [x] Relational multi-batch inventory (`medicine_batches` table) with individual expiry dates, MRP, cost, and selling prices
+- [x] Medicine Detail View (`MedicineDetailModal.tsx`) with active batches, "Add New Batch" form, and stock movement audit ledger
+- [x] Stock Adjustment workflow (`StockAdjustmentModal.tsx`) supporting Add/Reduce with negative stock prevention and audit reasons
+- [x] Full Bulk Import wizard (`BulkImportModal.tsx`) supporting Excel (.xlsx) and CSV (.csv), row validation, sample template download, and duplicate strategy (Skip vs Update)
+- [x] Full Inventory Export (`ExportModal.tsx`) supporting Excel (.xlsx) and CSV (.csv) across all or filtered scopes
+- [x] Soft-delete / archiving mechanism preserving historical transactions
+- [x] Future billing compatibility: FEFO (First Expiry, First Out) batch selector, expired batch exclusion, internal cost price isolation
+- [x] SQLite relational schema, composite indexes, and Tauri IPC commands in Rust
+- [x] Automated test suite expanded to 40 tests (`npm test` 100% passing)
 
-### Phase 4: Fast Point-of-Sale Billing (Pending Approval)
+### Phase 5: Fast Point-of-Sale Billing (Pending Approval)
 - [ ] Barcode / keyboard-first medicine lookup
 - [ ] Automatic GST calculation (CGST/SGST), batch auto-selection (FIFO)
 - [ ] Patient detail capture, doctor prescription tagging, printable invoice generation

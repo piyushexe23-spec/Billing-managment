@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { LoginPage } from "@/pages/LoginPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { StoreDetailsPage } from "@/pages/StoreDetailsPage";
+import { MedicinesPage } from "@/pages/MedicinesPage";
 import { AppLayout, NavItemKey } from "@/components/layout/AppLayout";
 import { authService, AuthUser } from "@/services/authService";
 import { Loader2, ShieldCheck } from "lucide-react";
@@ -105,7 +106,13 @@ export const App: React.FC = () => {
       activeItem={activeNav}
       onNavChange={setActiveNav}
     >
-      {activeNav === "store_details" ? <StoreDetailsPage /> : <DashboardPage />}
+      {activeNav === "store_details" ? (
+        <StoreDetailsPage />
+      ) : activeNav === "medicines" ? (
+        <MedicinesPage />
+      ) : (
+        <DashboardPage />
+      )}
     </AppLayout>
   );
 };

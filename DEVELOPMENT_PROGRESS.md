@@ -7,7 +7,8 @@
 - [x] Master Bug Fix (Layout, Sidebar, Sticky Navbar, Session Persistence, Independent Scrolling) completed & verified.
 - [x] Quick Logo Fix: High contrast text on dark sidebar & indicator dot clipping resolved.
 - [x] Command 03: Store Details Module completed & verified (Sections A-F, SQLite singleton, validation, logo upload/preview/removal).
-- [x] Navigation to New Bill, Medicines, Customers, Reports, and Backup & Restore remains disabled until subsequent approvals.
+- [x] Command 04: Medicine & Inventory Management Module completed & verified (Relational batches, 4 summary cards, 10-day expiry calculations, stock movements, bulk Excel/CSV import, export, FEFO billing readiness).
+- [x] Navigation to New Bill, Customers, Reports, and Backup & Restore remains disabled until subsequent approvals.
 
 ---
 
@@ -24,11 +25,11 @@
 | **MASTER BUG FIX - Session** | Cryptographic session persistence via `authService.ts` using Web Crypto HMAC-SHA256, zero plaintext passwords, tamper-proof, auto-expiration, loading screen on restore, purge on Logout | **COMPLETED** | Refresh retains session; closing/reopening retains session; Logout purges session; refresh after Logout shows Login. |
 | **Sidebar Logo Quick Fix** | Added `variant="dark"` and `iconOnly` mode for sidebar emblem; adjusted indicator dot placement (`top-0.5 right-0.5`) to eliminate clipping and contrast issues | **COMPLETED** | High-contrast white typography on dark navy; emblem centers seamlessly in collapsed mode. |
 | **Command 03 - Store Details** | Full Store Details screen (`StoreDetailsPage.tsx`) covering Sections A-F (Pharmacy Info, Pharmacist Credentials, Invoicing Config, Bank/UPI, Inventory Alert Threshold, Logo Upload/Preview/Removal) | **COMPLETED** | SQLite singleton table (`id = 1`) with UPSERT queries, Tauri IPC commands (`get_store_details`, `save_store_details`, `save_store_logo`, `remove_store_logo`), strict validations (GSTIN, IFSC, email, phone, prefix, bounds), reset & save handlers. |
-| **Command 03 - Testing** | Automated integration tests expanded to 30 tests (`npm test`) across Login, Dashboard, Master Bug Fix, and Store Details suites | **COMPLETED** | 30/30 tests passed; TypeScript compiler 0 errors; Vite production build 0 errors. |
+| **Command 04 - Medicine & Inventory** | Complete inventory module (`MedicinesPage.tsx`, `AddMedicineModal`, `MedicineDetailModal`, `StockAdjustmentModal`, `BulkImportModal`, `ExportModal`), relational `medicines`, `medicine_batches`, `stock_movements`, 4 live summary cards (total meds/units, top sellers honest empty state, low stock, 10-day expiring soon), fast search, multi-filters, pricing anomaly review, Excel/CSV bulk import with duplicate handling (skip vs update), export, and FEFO billing support | **COMPLETED** | 40/40 tests passing (`npm test`); TypeScript compiler 0 errors; Vite production build 0 errors; SQLite relational schema and Tauri commands registered. |
 
 ---
 
 ## Current Active Screen State
-- **Active Screens:** `LoginPage` (`src/pages/LoginPage.tsx`) ⇄ `DashboardPage` (`src/pages/DashboardPage.tsx`) ⇄ `StoreDetailsPage` (`src/pages/StoreDetailsPage.tsx`)
-- **Navigation Flow:** User logs in, lands on `DashboardPage`, can seamlessly switch to `StoreDetailsPage` via sidebar navigation and return to `DashboardPage`. Form state tracking shows "Unsaved Changes" or "Saved to SQLite". Reset discards modifications; Save persists to local database.
+- **Active Screens:** `LoginPage` (`src/pages/LoginPage.tsx`) ⇄ `DashboardPage` (`src/pages/DashboardPage.tsx`) ⇄ `MedicinesPage` (`src/pages/MedicinesPage.tsx`) ⇄ `StoreDetailsPage` (`src/pages/StoreDetailsPage.tsx`)
+- **Navigation Flow:** User logs in, lands on `DashboardPage`, can seamlessly switch between `MedicinesPage` and `StoreDetailsPage` via sidebar navigation. All inventory actions (Add, Batch Management, Stock Adjustment, Excel/CSV Import, Export) are active and persisted.
 - **Next Screen:** None (waiting for user review & explicit approval for subsequent commands).

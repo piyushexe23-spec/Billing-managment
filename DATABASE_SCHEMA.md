@@ -142,20 +142,55 @@ Clinic and billing header details for print receipts.
 | `phone` | `TEXT` | `NULLABLE` | Contact telephone |
 | `email` | `TEXT` | `NULLABLE` | Contact email |
 
-### `medicines` (Foundation)
-Inventory and stock master.
+### `medicines`
+Master pharmacy medicine registry. Total stock is calculated dynamically by summing active batch quantities.
 | Column | Type | Constraints | Description |
 | :--- | :--- | :--- | :--- |
-| `id` | `INTEGER` | `PRIMARY KEY AUTOINCREMENT` | Primary key |
+| `id` | `INTEGER` | `PRIMARY KEY AUTOINCREMENT` | Unique medicine ID |
 | `name` | `TEXT` | `NOT NULL` | Brand / trade name |
 | `generic_name` | `TEXT` | `NULLABLE` | Active chemical composition |
-| `hsn_code` | `TEXT` | `NULLABLE` | Harmonized System Code for GST |
-| `batch_no` | `TEXT` | `NULLABLE` | Production batch |
+| `manufacturer` | `TEXT` | `NULLABLE` | Pharmaceutical manufacturer |
+| `category` | `TEXT` | `NULLABLE` | Therapeutic classification |
+| `description` | `TEXT` | `NULLABLE` | Clinical notes & dosage instructions |
+| `barcode` | `TEXT` | `NULLABLE` | Standard EAN/UPC barcode string |
+| `hsn_code` | `TEXT` | `NULLABLE` | Harmonized System Code for GST compliance |
+| `unit` | `TEXT` | `NOT NULL DEFAULT 'Tablet'` | Dispensing unit (Tablet, Strip, Bottle, etc.) |
+| `low_stock_threshold`| `INTEGER` | `NOT NULL DEFAULT 10` | Low stock alert threshold |
+| `is_active` | `INTEGER` | `NOT NULL DEFAULT 1` | Soft-delete / active status flag |
+| `created_at` | `DATETIME` | `DEFAULT CURRENT_TIMESTAMP` | Registration timestamp |
+| `updated_at` | `DATETIME` | `DEFAULT CURRENT_TIMESTAMP` | Last updated timestamp |
+
+### `medicine_batches`
+Batch-specific inventory, individual expiry dates, and pricing records.
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `INTEGER` | `PRIMARY KEY AUTOINCREMENT` | Unique batch record ID |
+| `medicine_id` | `INTEGER` | `NOT NULL REFERENCES medicines(id)` | Parent medicine reference |
+| `batch_number` | `TEXT` | `NOT NULL` | Physical batch / lot identifier |
 | `mfg_date` | `DATE` | `NULLABLE` | Manufacturing date |
-| `exp_date` | `DATE` | `NULLABLE` | Expiry date |
-| `mrp` | `REAL` | `NOT NULL` | Maximum Retail Price |
-| `rate` | `REAL` | `NOT NULL` | Purchase rate / cost |
-| `stock_qty` | `INTEGER` | `DEFAULT 0` | Available quantity units |
+| `exp_date` | `DATE` | `NOT NULL` | Expiry date (determines 10-day alert & saleability) |
+| `cost_price` | `REAL` | `NOT NULL DEFAULT 0.0` | Purchase cost per unit (internal only) |
+| `mrp` | `REAL` | `NOT NULL DEFAULT 0.0` | Maximum Retail Price |
+| `selling_price`| `REAL` | `NOT NULL DEFAULT 0.0` | Default customer billing price |
+| `stock_qty` | `INTEGER` | `NOT NULL DEFAULT 0` | Available stock units in this batch |
+| `is_active` | `INTEGER` | `NOT NULL DEFAULT 1` | Active batch status flag |
+| `created_at` | `DATETIME` | `DEFAULT CURRENT_TIMESTAMP` | Record timestamp |
+| `updated_at` | `DATETIME` | `DEFAULT CURRENT_TIMESTAMP` | Last updated timestamp |
+
+### `stock_movements`
+Complete audit trail for stock additions, adjustments, sales, and reductions.
+| Column | Type | Constraints | Description |
+| :--- | :--- | :--- | :--- |
+| `id` | `INTEGER` | `PRIMARY KEY AUTOINCREMENT` | Unique movement transaction ID |
+| `medicine_id` | `INTEGER` | `NOT NULL REFERENCES medicines(id)` | Associated medicine |
+| `batch_id` | `INTEGER` | `NULLABLE REFERENCES medicine_batches(id)` | Associated batch |
+| `movement_type`| `TEXT` | `NOT NULL` | OPENING_STOCK, PURCHASE, ADJUSTMENT_ADD, ADJUSTMENT_REDUCE, SALE, DAMAGE, RETURN |
+| `quantity` | `INTEGER` | `NOT NULL` | Units adjusted |
+| `previous_qty` | `INTEGER` | `NOT NULL` | Batch stock prior to movement |
+| `new_qty` | `INTEGER` | `NOT NULL` | Batch stock after movement |
+| `reason` | `TEXT` | `NULLABLE` | User audit reason or invoice reference |
+| `reference_id` | `TEXT` | `NULLABLE` | External invoice / document reference ID |
+| `created_at` | `DATETIME` | `DEFAULT CURRENT_TIMESTAMP` | Transaction timestamp |
 
 ### `bills` (Foundation)
 Invoice headers and patient billing ledger.

@@ -5,7 +5,7 @@
   "3": "cn",
   "4": "4. Phase Breakdown & Roadmap",
   "5": "3. Schema Definitions",
-  "6": "cn",
+  "6": "DashboardPage.tsx",
   "7": "compilerOptions",
   "8": "db.rs",
   "9": "IM MEDICOS — Architecture & Knowledge Graph",
@@ -15,8 +15,7 @@
   "13": "tailwind.config.js",
   "14": "im-medicos",
   "15": "postcss.config.js",
-  "16": "App.tsx",
   "17": "StoreDetailsPage.tsx",
   "18": "test-dashboard-flow.mjs",
-  "19": "IM MEDICOS — Development Progress Tracker"
+  "19": "medicineService.ts"
 }

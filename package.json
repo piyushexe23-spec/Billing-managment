@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "test": "node test-login-flow.mjs && node test-dashboard-flow.mjs && node test-master-bugfix.mjs && node test-store-details.mjs",
+    "test": "node test-login-flow.mjs && node test-dashboard-flow.mjs && node test-master-bugfix.mjs && node test-store-details.mjs && node test-medicine-module.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -16,7 +16,8 @@
     "lucide-react": "^0.460.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tailwind-merge": "^2.5.4"
+    "tailwind-merge": "^2.5.4",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",

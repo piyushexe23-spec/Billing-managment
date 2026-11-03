@@ -48,7 +48,7 @@ const NAV_ITEMS: NavItemConfig[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, isImplemented: true },
   { key: "new_bill", label: "New Bill", icon: Receipt, isImplemented: false, phaseText: "Phase 4" },
   { key: "bill_history", label: "Bill History", icon: History, isImplemented: false, phaseText: "Phase 4" },
-  { key: "medicines", label: "Medicines", icon: Pill, isImplemented: false, phaseText: "Phase 3" },
+  { key: "medicines", label: "Medicines", icon: Pill, isImplemented: true },
   { key: "customers", label: "Customers", icon: Users, isImplemented: false, phaseText: "Phase 3" },
   { key: "reports", label: "Reports", icon: BarChart3, isImplemented: false, phaseText: "Phase 5" },
   { key: "store_details", label: "Store Details", icon: Store, isImplemented: true },
@@ -286,12 +286,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               <h1 className="text-base font-bold text-medical-navy-950 truncate">
                 {activeItem === "store_details"
                   ? "Store Details & Settings"
+                  : activeItem === "medicines"
+                  ? "Medicine Inventory"
                   : "Dashboard Overview"}
               </h1>
               <span className="text-medical-slate-300 hidden sm:inline">•</span>
               <span className="text-xs text-medical-slate-500 hidden sm:inline font-medium truncate">
                 {activeItem === "store_details"
                   ? "Pharmacy Configuration & Invoicing Setup"
+                  : activeItem === "medicines"
+                  ? "Medicine Master, Multi-Batch Stock & Expiry Control"
                   : "IM MEDICOS Billing & Pharmacy System"}
               </span>
             </div>
