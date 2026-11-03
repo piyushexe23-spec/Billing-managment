@@ -132,8 +132,15 @@ export const MedicinesPage: React.FC = () => {
       }
 
       // 2. Stock Status Filter
-      if (stockStatusFilter !== "ALL" && m.stockStatus !== stockStatusFilter) {
-        return false;
+      if (stockStatusFilter !== "ALL") {
+        if (!m.isActive) return false;
+        if (stockStatusFilter === "NEEDS_RESTOCK") {
+          if (m.stockStatus !== "LOW_STOCK" && m.stockStatus !== "OUT_OF_STOCK") {
+            return false;
+          }
+        } else if (m.stockStatus !== stockStatusFilter) {
+          return false;
+        }
       }
 
       // 3. Expiry Status Filter
@@ -225,10 +232,20 @@ export const MedicinesPage: React.FC = () => {
 
   // Quick Card Click Filter Handlers
   const handleFilterLowStockCard = () => {
-    if (stockStatusFilter === "LOW_STOCK") {
+    if (stockStatusFilter === "NEEDS_RESTOCK") {
       setStockStatusFilter("ALL");
     } else {
-      setStockStatusFilter("LOW_STOCK");
+      setStockStatusFilter("NEEDS_RESTOCK");
+      setCurrentPage(1);
+    }
+  };
+
+  const handleFilterOutOfStockPill = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (stockStatusFilter === "OUT_OF_STOCK") {
+      setStockStatusFilter("ALL");
+    } else {
+      setStockStatusFilter("OUT_OF_STOCK");
       setCurrentPage(1);
     }
   };
@@ -358,11 +375,11 @@ export const MedicinesPage: React.FC = () => {
         <div
           onClick={handleFilterLowStockCard}
           className={`bg-white rounded-2xl border p-4 sm:p-5 shadow-xs flex flex-col justify-between min-w-0 cursor-pointer transition-all hover:border-amber-400 group ${
-            stockStatusFilter === "LOW_STOCK"
+            stockStatusFilter === "NEEDS_RESTOCK"
               ? "border-amber-500 ring-2 ring-amber-500/20 bg-amber-50/20"
               : "border-medical-slate-200/80 hover:shadow-sm"
           }`}
-          title="Click to filter low stock medicines"
+          title="Click to filter medicines needing restock (low & out of stock)"
         >
           <div className="flex items-center justify-between gap-2">
             <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wider group-hover:text-amber-800">
@@ -375,15 +392,27 @@ export const MedicinesPage: React.FC = () => {
           <div className="mt-2 space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-2xl sm:text-3xl font-bold text-amber-600 font-sans tabular-nums">
-                {summary ? summary.lowStockCount : 0}
+                {summary
+                  ? (summary.needsRestockCount ?? (summary.lowStockCount + summary.outOfStockCount))
+                  : 0}
               </span>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 whitespace-nowrap">
+              <span
+                onClick={handleFilterOutOfStockPill}
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold cursor-pointer transition-all whitespace-nowrap ${
+                  stockStatusFilter === "OUT_OF_STOCK"
+                    ? "bg-red-600 text-white shadow-xs ring-2 ring-red-400"
+                    : "bg-red-100 text-red-700 hover:bg-red-200"
+                }`}
+                title="Click to filter out of stock medicines only"
+              >
                 {summary ? summary.outOfStockCount : 0} out of stock
               </span>
             </div>
             <p className="text-xs text-medical-slate-500 truncate">
-              {stockStatusFilter === "LOW_STOCK"
+              {stockStatusFilter === "NEEDS_RESTOCK"
                 ? "Active filter • Click to clear"
+                : stockStatusFilter === "OUT_OF_STOCK"
+                ? "Out of stock filter active • Click card to show all restock"
                 : "Medicines at or below threshold"}
             </p>
           </div>
@@ -505,8 +534,9 @@ export const MedicinesPage: React.FC = () => {
             >
               <option value="ALL">All Stock Levels</option>
               <option value="IN_STOCK">In Stock</option>
-              <option value="LOW_STOCK">Low Stock (≤ Threshold)</option>
-              <option value="OUT_OF_STOCK">Out of Stock (0 units)</option>
+              <option value="LOW_STOCK">Low Stock</option>
+              <option value="OUT_OF_STOCK">Out of Stock</option>
+              <option value="NEEDS_RESTOCK">Needs Restock (Low + Out)</option>
             </select>
           </div>
 

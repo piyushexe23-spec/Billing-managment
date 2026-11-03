@@ -113,13 +113,16 @@ export interface InventorySummaryMetrics {
   }>;
   lowStockCount: number;
   outOfStockCount: number;
+  needsRestockCount: number;
   expiringSoonCount: number; // Expiring within 10 calendar days
   expiredCount: number;
 }
 
+export type StockStatusFilter = "ALL" | StockStatus | "NEEDS_RESTOCK";
+
 export interface MedicineFilterOptions {
   search: string;
-  stockStatus: "ALL" | StockStatus;
+  stockStatus: StockStatusFilter;
   expiryStatus: "ALL" | ExpiryStatus;
   manufacturer: string;
   category: string;

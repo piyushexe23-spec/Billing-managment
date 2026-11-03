@@ -435,6 +435,7 @@ pub struct InventorySummaryMetrics {
     pub top_selling_medicines: Vec<TopSellingMedicineItem>,
     pub low_stock_count: i64,
     pub out_of_stock_count: i64,
+    pub needs_restock_count: i64,
     pub expiring_soon_count: i64,
     pub expired_count: i64,
 }
@@ -1150,6 +1151,8 @@ pub fn fetch_inventory_summary(conn: &Connection) -> Result<InventorySummaryMetr
         }
     }
 
+    let needs_restock_count = low_stock_count + out_of_stock_count;
+
     // 4. Expiry metrics (within 10 calendar days and already expired)
     let expired_count: i64 = conn.query_row(
         r#"SELECT COUNT(*)
@@ -1182,6 +1185,7 @@ pub fn fetch_inventory_summary(conn: &Connection) -> Result<InventorySummaryMetr
         top_selling_medicines,
         low_stock_count,
         out_of_stock_count,
+        needs_restock_count,
         expiring_soon_count,
         expired_count,
     })

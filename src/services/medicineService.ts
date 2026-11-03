@@ -1072,6 +1072,8 @@ export const medicineService = {
       }
     }
 
+    const needsRestockCount = lowStockCount + outOfStockCount;
+
     return {
       totalMedicines,
       totalStockUnits,
@@ -1079,6 +1081,7 @@ export const medicineService = {
       topSellingMedicines: [], // Honest empty state before billing exists
       lowStockCount,
       outOfStockCount,
+      needsRestockCount,
       expiringSoonCount,
       expiredCount,
     };
