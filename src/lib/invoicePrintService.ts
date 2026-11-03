@@ -296,61 +296,61 @@ export function generateInvoiceHtml(bill: BillRecord, overrideLogoSrc?: string |
       `;
     });
 
-    // Middle Column licenses
+    // Middle Column licenses (27% width, 3mm padding each side)
     let licensesHtml = "";
     if (store.showGstin && store.gstin) {
       licensesHtml += `
-        <div style="display: flex; gap: 4px; margin-bottom: 3px;">
-          <span style="font-weight: bold; color: #0b3a73; width: 55px; shrink: 0;">GSTIN :</span>
-          <span style="font-weight: 600; color: #1e293b;">${store.gstin}</span>
+        <div style="display: flex; gap: 4px; margin-bottom: 2px; flex-wrap: wrap;">
+          <span style="font-weight: bold; color: #0b3a73; flex-shrink: 0;">GSTIN :</span>
+          <span style="font-weight: 600; color: #1e293b; word-break: break-all; overflow-wrap: anywhere;">${store.gstin}</span>
         </div>
       `;
     }
     if (store.drugLicense1 || store.drugLicense2) {
       licensesHtml += `
-        <div style="display: flex; gap: 4px;">
-          <span style="font-weight: bold; color: #0b3a73; width: 55px; shrink: 0;">DL No. :</span>
-          <div style="font-weight: 600; color: #1e293b; line-height: 1.2;">
-            ${store.drugLicense1 ? `<div>${store.drugLicense1}</div>` : ""}
-            ${store.drugLicense2 ? `<div style="margin-top: 2px;">${store.drugLicense2}</div>` : ""}
+        <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+          <span style="font-weight: bold; color: #0b3a73; flex-shrink: 0;">DL No. :</span>
+          <div style="font-weight: 600; color: #1e293b; line-height: 1.25; flex: 1; min-width: 0; word-break: break-word; overflow-wrap: anywhere;">
+            ${store.drugLicense1 ? `<div style="word-break: break-word; overflow-wrap: anywhere;">${store.drugLicense1}</div>` : ""}
+            ${store.drugLicense2 ? `<div style="margin-top: 2px; word-break: break-word; overflow-wrap: anywhere;">${store.drugLicense2}</div>` : ""}
           </div>
         </div>
       `;
     }
 
-    // Right Column Contact
+    // Right Column Contact (35% width, 3mm padding left)
     let contactHtml = "";
     if (store.address) {
       contactHtml += `
-        <div style="display: flex; align-items: flex-start; gap: 6px; margin-bottom: 4px;">
-          <svg style="width: 14px; height: 14px; color: #0b3a73; flex-shrink: 0; margin-top: 1px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <div style="display: flex; align-items: flex-start; gap: 5px; margin-bottom: 3px;">
+          <svg style="width: 13px; height: 13px; color: #0b3a73; flex-shrink: 0; margin-top: 1px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
             <circle cx="12" cy="10" r="3"></circle>
           </svg>
-          <span style="font-size: 10px; color: #334155; line-height: 1.2;">${store.address}</span>
+          <span style="font-size: 9.5px; color: #334155; line-height: 1.25; word-break: break-word; overflow-wrap: anywhere;">${store.address}</span>
         </div>
       `;
     }
     if (store.phone) {
       contactHtml += `
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <svg style="width: 14px; height: 14px; color: #0b3a73; flex-shrink: 0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <div style="display: flex; align-items: center; gap: 5px;">
+          <svg style="width: 13px; height: 13px; color: #0b3a73; flex-shrink: 0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path>
           </svg>
-          <span style="font-size: 10px; font-weight: 600; color: #1e293b;">${store.phone}</span>
+          <span style="font-size: 10px; font-weight: 600; color: #1e293b; white-space: nowrap;">${store.phone}</span>
         </div>
       `;
     }
 
-    // Logo HTML: Height-limited to 20mm and max width 70mm, keeping aspect ratio, aligned left and centered vertically
+    // Logo HTML: max-width 100% of column, height-limited to 18mm, keeping aspect ratio, aligned left and centered vertically
     const logoBlockHtml = logoSrc
-      ? `<div style="max-width: 70mm; max-height: 20mm; height: 20mm; display: flex; align-items: center; justify-content: flex-start;">
-           <img class="store-invoice-logo" src="${logoSrc}" alt="${store.storeName || "Pharmacy Logo"}" style="max-width: 70mm; max-height: 20mm; height: auto; width: auto; object-fit: contain; object-position: left center; image-rendering: auto;" />
+      ? `<div style="width: 100%; max-width: 100%; max-height: 18mm; height: 18mm; display: flex; align-items: center; justify-content: flex-start; overflow: hidden;">
+           <img class="store-invoice-logo" src="${logoSrc}" alt="${store.storeName || "Pharmacy Logo"}" style="max-width: 100%; max-height: 18mm; height: auto; width: auto; object-fit: contain; object-position: left center; display: block; image-rendering: auto;" />
          </div>`
-      : `<h1 style="margin: 0; font-size: 17px; font-weight: 800; color: #0b3a73; text-transform: uppercase; line-height: 1.2;">${store.storeName || "PHARMACY"}</h1>`;
+      : `<h1 style="margin: 0; font-size: 16px; font-weight: 800; color: #0b3a73; text-transform: uppercase; line-height: 1.2; word-break: break-word; overflow-wrap: anywhere;">${store.storeName || "PHARMACY"}</h1>`;
 
     const taglineHtml = store.tagline
-      ? `<p style="margin: 2px 0 0 0; font-size: 9.5px; font-weight: 500; color: #64748b; letter-spacing: 0.3px;">${store.tagline}</p>`
+      ? `<p style="margin: 2px 0 0 0; font-size: 9px; font-weight: 500; color: #64748b; letter-spacing: 0.3px; word-break: break-word; overflow-wrap: anywhere;">${store.tagline}</p>`
       : "";
 
     // Terms bullets HTML
@@ -580,33 +580,49 @@ export function generateInvoiceHtml(bill: BillRecord, overrideLogoSrc?: string |
         }
         .header {
           display: flex;
+          align-items: stretch;
           justify-content: space-between;
-          align-items: center;
           padding-bottom: 8px;
+          min-height: 48px;
         }
         .header-col-left {
-          width: 36%;
-          min-height: 50px;
+          width: calc(38% - 1px);
+          flex-shrink: 0;
           display: flex;
           flex-direction: column;
           justify-content: center;
-          padding-right: 8px;
+          padding-right: 4mm;
+          box-sizing: border-box;
+          overflow: hidden;
         }
         .header-col-mid {
-          width: 28%;
-          padding: 0 10px;
-          font-size: 10.5px;
+          width: calc(27% - 1px);
+          flex-shrink: 0;
+          padding: 0 3mm;
+          font-size: 10px;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          box-sizing: border-box;
+          overflow: hidden;
         }
         .header-col-right {
-          width: 34%;
-          padding-left: 10px;
+          width: 35%;
+          flex-shrink: 0;
+          padding-left: 3mm;
           font-size: 10px;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          box-sizing: border-box;
+          overflow: hidden;
         }
         .divider-v {
           width: 1px;
           background: #0b3a73;
           align-self: stretch;
-          margin: 2px 0;
+          flex-shrink: 0;
+          margin: 1px 0;
         }
         .header-line {
           width: 100%;

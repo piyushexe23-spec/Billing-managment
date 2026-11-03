@@ -464,9 +464,14 @@ console.log("\nTest 8: Invoice PDF & Print Template Specifications");
   assert(!invoicePdfSrc.includes("* All prices are inclusive of GST"), "InvoicePdfDocument must not contain inclusive footnote");
   assert(!invoicePrintSrc.includes("* All prices are inclusive of GST"), "invoicePrintService must not contain inclusive footnote");
 
-  // 3. Logo handling and snapshot: height-limited to 20mm and max width 70mm, auto-trimmed
-  assert(invoicePdfSrc.includes("max-w-[70mm] max-h-[20mm]"), "InvoicePdfDocument sizes logo to max 70mm x 20mm preserving aspect ratio");
-  assert(invoicePrintSrc.includes("max-width: 70mm; max-height: 20mm"), "invoicePrintService sizes logo to max 70mm x 20mm");
+  // 3. Logo handling and header column constraints: max-width 100%, max-height 18mm, 38/27/35 split, 4mm/3mm padding
+  assert(invoicePdfSrc.includes("max-w-full max-h-[18mm]"), "InvoicePdfDocument sizes logo to 100% column max width and 18mm max height");
+  assert(invoicePrintSrc.includes("max-width: 100%; max-height: 18mm"), "invoicePrintService sizes logo to 100% column max width and 18mm max height");
+  assert(invoicePrintSrc.includes("38%"), "Header left column has 38% width");
+  assert(invoicePrintSrc.includes("27%"), "Header middle column has 27% width");
+  assert(invoicePrintSrc.includes("35%"), "Header right column has 35% width");
+  assert(invoicePrintSrc.includes("padding-right: 4mm"), "At least 4mm padding between logo and first divider");
+  assert(invoicePrintSrc.includes("padding: 0 3mm"), "3mm padding on each side of dividers");
   assert(invoicePrintSrc.includes("trimImageWhitespace"), "invoicePrintService implements auto-trimming of logo whitespace");
   assert(invoicePdfSrc.includes("trimImageWhitespace"), "InvoicePdfDocument uses auto-trimmed logo");
   assert(!invoicePdfSrc.includes("Medical Billing Software"), "InvoicePdfDocument must not have 'Medical Billing Software'");

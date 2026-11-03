@@ -150,59 +150,59 @@ export const InvoicePdfDocument: React.FC<InvoicePdfDocumentProps> = ({ bill }) 
           {/* Thin Navy Outer Page Border Container: margin 8mm guarantees never clipped */}
           <div className="page-border-container border-[1.5px] border-[#0b3a73] p-[5mm] box-border bg-white flex flex-col justify-start">
             
-            {/* 1. Header with 3 Columns & Thin Vertical Dividers */}
-            <div className="flex items-center justify-between pb-2.5">
+            {/* 1. Header with 3 Columns & Thin Vertical Dividers (38% Logo, 27% Licenses, 35% Contact) */}
+            <div className="flex items-stretch justify-between pb-2.5">
               
-              {/* Left Column: Logo Block or Store Name */}
-              <div className="w-[36%] shrink-0 pr-3 flex flex-col justify-center min-h-[50px]">
+              {/* Left Column (38%): Logo Block or Store Name (>= 4mm padding before divider) */}
+              <div className="w-[calc(38%-1px)] shrink-0 pr-[4mm] flex flex-col justify-center min-h-[46px] overflow-hidden box-border">
                 {logoSrc ? (
-                  <div className="max-w-[70mm] max-h-[20mm] h-[20mm] flex items-center justify-start">
+                  <div className="w-full max-w-full max-h-[18mm] h-[18mm] flex items-center justify-start overflow-hidden">
                     <img
                       src={trimmedLogoSrc || logoSrc}
                       alt={store.storeName || "Pharmacy Logo"}
-                      className="max-w-[70mm] max-h-[20mm] h-auto w-auto object-contain object-left"
+                      className="max-w-full max-h-[18mm] h-auto w-auto object-contain object-left block"
                       style={{ imageRendering: "auto" }}
                     />
                   </div>
                 ) : (
-                  <h1 className="text-lg font-black text-[#0b3a73] tracking-tight uppercase leading-tight">
+                  <h1 className="text-base font-black text-[#0b3a73] tracking-tight uppercase leading-tight break-words">
                     {store.storeName || "PHARMACY"}
                   </h1>
                 )}
                 {store.tagline && (
-                  <p className="text-[9.5px] font-medium text-slate-500 mt-0.5 tracking-wide">
+                  <p className="text-[9px] font-medium text-slate-500 mt-0.5 tracking-wide break-words">
                     {store.tagline}
                   </p>
                 )}
               </div>
 
               {/* Thin Vertical Navy Divider 1 */}
-              <div className="w-[1px] bg-[#0b3a73] self-stretch my-0.5" />
+              <div className="w-[1px] bg-[#0b3a73] shrink-0 self-stretch my-0.5" />
 
-              {/* Middle Column: GSTIN & Drug Licenses */}
-              <div className="w-[28%] px-3 text-[10.5px] space-y-1">
+              {/* Middle Column (27%): GSTIN & Drug Licenses (3mm padding each side) */}
+              <div className="w-[calc(27%-1px)] shrink-0 px-[3mm] text-[10px] space-y-1 flex flex-col justify-center box-border overflow-hidden">
                 {store.showGstin && store.gstin && (
-                  <div className="flex items-baseline gap-1.5">
+                  <div className="flex items-baseline gap-1 break-all">
                     <span className="font-bold text-[#0b3a73] shrink-0">GSTIN :</span>
                     <span className="font-semibold text-slate-800 break-all">{store.gstin}</span>
                   </div>
                 )}
                 {(store.drugLicense1 || store.drugLicense2) && (
-                  <div className="flex items-baseline gap-1.5">
+                  <div className="flex items-baseline gap-1">
                     <span className="font-bold text-[#0b3a73] shrink-0">DL No. :</span>
-                    <div className="font-semibold text-slate-800 leading-tight">
-                      {store.drugLicense1 && <div>{store.drugLicense1}</div>}
-                      {store.drugLicense2 && <div className="mt-0.5">{store.drugLicense2}</div>}
+                    <div className="font-semibold text-slate-800 leading-tight break-words flex-1 min-w-0">
+                      {store.drugLicense1 && <div className="break-words">{store.drugLicense1}</div>}
+                      {store.drugLicense2 && <div className="mt-0.5 break-words">{store.drugLicense2}</div>}
                     </div>
                   </div>
                 )}
               </div>
 
               {/* Thin Vertical Navy Divider 2 */}
-              <div className="w-[1px] bg-[#0b3a73] self-stretch my-0.5" />
+              <div className="w-[1px] bg-[#0b3a73] shrink-0 self-stretch my-0.5" />
 
-              {/* Right Column: Address & Phone */}
-              <div className="w-[34%] pl-3 text-[10.5px] space-y-1 text-slate-700">
+              {/* Right Column (35%): Address & Phone (3mm padding left) */}
+              <div className="w-[35%] shrink-0 pl-[3mm] text-[10px] space-y-1 text-slate-700 flex flex-col justify-center box-border overflow-hidden">
                 {store.address && (
                   <div className="flex items-start gap-1.5">
                     {/* Location Pin SVG */}
@@ -218,7 +218,7 @@ export const InvoicePdfDocument: React.FC<InvoicePdfDocumentProps> = ({ bill }) 
                       <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
                       <circle cx="12" cy="10" r="3" />
                     </svg>
-                    <span className="text-[10px] leading-tight line-clamp-2">{store.address}</span>
+                    <span className="text-[9.5px] leading-tight break-words text-slate-700">{store.address}</span>
                   </div>
                 )}
                 {store.phone && (
@@ -235,7 +235,7 @@ export const InvoicePdfDocument: React.FC<InvoicePdfDocumentProps> = ({ bill }) 
                     >
                       <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
                     </svg>
-                    <span className="text-[10px] font-semibold text-slate-800">{store.phone}</span>
+                    <span className="text-[10px] font-semibold text-slate-800 whitespace-nowrap">{store.phone}</span>
                   </div>
                 )}
               </div>
