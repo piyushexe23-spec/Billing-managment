@@ -115,3 +115,4 @@ export function validateStoreDetails(data: StoreDetails): {
     errors,
   };
 }
+

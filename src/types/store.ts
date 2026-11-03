@@ -40,3 +40,4 @@ export interface StoreDetails {
 }
 
 export type StoreDetailsFormErrors = Partial<Record<keyof StoreDetails, string>>;
+
