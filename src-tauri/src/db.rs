@@ -45,7 +45,7 @@ pub fn init_database<P: AsRef<Path>>(path: P) -> Result<Connection> {
     migrate_medicine_tables(&conn)?;
     seed_default_admin(&conn)?;
     seed_default_store(&conn)?;
-    seed_default_medicines(&conn)?;
+    cleanup_demo_medicines(&conn)?;
 
     Ok(conn)
 }
@@ -456,78 +456,20 @@ pub fn migrate_medicine_tables(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Seeds default test medicines and batches if database has zero medicines
-pub fn seed_default_medicines(conn: &Connection) -> Result<()> {
-    let mut stmt = conn.prepare("SELECT COUNT(*) FROM medicines")?;
-    let count: i64 = stmt.query_row([], |row| row.get(0))?;
-
-    if count == 0 {
-        // Medicine 1: Paracetamol 650mg
-        conn.execute(
-            r#"INSERT INTO medicines (id, name, generic_name, manufacturer, category, description, barcode, unit, low_stock_threshold)
-               VALUES (1, 'Dolo 650 Tablet', 'Paracetamol 650mg', 'Micro Labs Ltd', 'Analgesic & Antipyretic', 'Fever and mild to moderate pain relief', '8901234567890', 'Strip', 20)"#,
-            [],
-        )?;
-        // Batch 1: Safe
-        conn.execute(
-            r#"INSERT INTO medicine_batches (medicine_id, batch_number, mfg_date, exp_date, cost_price, mrp, selling_price, stock_qty)
-               VALUES (1, 'DL-650-A1', '2025-01-10', '2027-12-31', 22.50, 34.00, 31.00, 150)"#,
-            [],
-        )?;
-        // Batch 2: Expiring soon (for testing alerts)
-        conn.execute(
-            r#"INSERT INTO medicine_batches (medicine_id, batch_number, mfg_date, exp_date, cost_price, mrp, selling_price, stock_qty)
-               VALUES (1, 'DL-650-EXP', '2024-05-01', date('now', '+5 days'), 20.00, 32.00, 28.00, 8)"#,
-            [],
-        )?;
-
-        // Medicine 2: Amoxicillin 500mg (Low Stock)
-        conn.execute(
-            r#"INSERT INTO medicines (id, name, generic_name, manufacturer, category, description, barcode, unit, low_stock_threshold)
-               VALUES (2, 'Augmentin 625 Duo', 'Amoxicillin & Potassium Clavulanate', 'GlaxoSmithKline', 'Antibiotics', 'Bacterial infections', '8901234567891', 'Strip', 15)"#,
-            [],
-        )?;
-        conn.execute(
-            r#"INSERT INTO medicine_batches (medicine_id, batch_number, mfg_date, exp_date, cost_price, mrp, selling_price, stock_qty)
-               VALUES (2, 'AUG-24-99', '2025-02-15', '2027-06-30', 145.00, 204.00, 190.00, 6)"#,
-            [],
-        )?;
-
-        // Medicine 3: Azithromycin 500mg (Out of Stock)
-        conn.execute(
-            r#"INSERT INTO medicines (id, name, generic_name, manufacturer, category, description, barcode, unit, low_stock_threshold)
-               VALUES (3, 'Azithral 500 Tablet', 'Azithromycin 500mg', 'Alembic Pharma', 'Antibiotics', 'Respiratory and soft tissue infections', '8901234567892', 'Strip', 10)"#,
-            [],
-        )?;
-        conn.execute(
-            r#"INSERT INTO medicine_batches (medicine_id, batch_number, mfg_date, exp_date, cost_price, mrp, selling_price, stock_qty)
-               VALUES (3, 'AZ-500-OOS', '2024-11-01', '2026-10-31', 95.00, 132.00, 120.00, 0)"#,
-            [],
-        )?;
-
-        // Medicine 4: Cetirizine 10mg
-        conn.execute(
-            r#"INSERT INTO medicines (id, name, generic_name, manufacturer, category, description, barcode, unit, low_stock_threshold)
-               VALUES (4, 'Cetcip 10mg', 'Cetirizine Hydrochloride', 'Cipla Ltd', 'Antihistamine', 'Allergy, rhinitis, and urticaria', '8901234567893', 'Strip', 25)"#,
-            [],
-        )?;
-        conn.execute(
-            r#"INSERT INTO medicine_batches (medicine_id, batch_number, mfg_date, exp_date, cost_price, mrp, selling_price, stock_qty)
-               VALUES (4, 'CC-10-88', '2025-01-01', '2028-03-31', 12.00, 21.00, 19.50, 80)"#,
-            [],
-        )?;
-
-        // Record Initial Stock Movements
-        conn.execute(
-            r#"INSERT INTO stock_movements (medicine_id, batch_id, movement_type, quantity, previous_qty, new_qty, reason)
-               VALUES (1, 1, 'OPENING_STOCK', 150, 0, 150, 'Initial inventory setup'),
-                      (1, 2, 'OPENING_STOCK', 8, 0, 8, 'Initial inventory setup'),
-                      (2, 3, 'OPENING_STOCK', 6, 0, 6, 'Initial inventory setup'),
-                      (4, 5, 'OPENING_STOCK', 80, 0, 80, 'Initial inventory setup')"#,
-            [],
-        )?;
-    }
-
+/// Cleans up any legacy hardcoded demo medicines so user starts with a clean inventory
+pub fn cleanup_demo_medicines(conn: &Connection) -> Result<()> {
+    conn.execute(
+        "DELETE FROM stock_movements WHERE medicine_id IN (SELECT id FROM medicines WHERE name IN ('Dolo 650 Tablet', 'Augmentin 625 Duo', 'Azithral 500 Tablet', 'Cetcip 10mg'))",
+        [],
+    )?;
+    conn.execute(
+        "DELETE FROM medicine_batches WHERE medicine_id IN (SELECT id FROM medicines WHERE name IN ('Dolo 650 Tablet', 'Augmentin 625 Duo', 'Azithral 500 Tablet', 'Cetcip 10mg'))",
+        [],
+    )?;
+    conn.execute(
+        "DELETE FROM medicines WHERE name IN ('Dolo 650 Tablet', 'Augmentin 625 Duo', 'Azithral 500 Tablet', 'Cetcip 10mg')",
+        [],
+    )?;
     Ok(())
 }
 

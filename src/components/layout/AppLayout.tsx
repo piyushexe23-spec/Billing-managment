@@ -295,7 +295,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 {activeItem === "store_details"
                   ? "Pharmacy Configuration & Invoicing Setup"
                   : activeItem === "medicines"
-                  ? "Medicine Master, Multi-Batch Stock & Expiry Control"
+                  ? "Manage medicines, stock levels and expiry."
                   : "IM MEDICOS Billing & Pharmacy System"}
               </span>
             </div>

@@ -81,252 +81,29 @@ export function calculateStockStatus(
 }
 
 // ----------------------------------------------------------------------
-// Default Initial Seed Data for Pharmacy Inventory
-// ----------------------------------------------------------------------
-const INITIAL_MEDICINES: Medicine[] = [
-  {
-    id: 1,
-    name: "Dolo 650 Tablet",
-    genericName: "Paracetamol 650mg",
-    manufacturer: "Micro Labs Ltd",
-    category: "Analgesic & Antipyretic",
-    description: "Fever and mild to moderate pain relief",
-    barcode: "8901234567890",
-    hsnCode: "30049099",
-    unit: "Strip",
-    lowStockThreshold: 20,
-    isActive: true,
-    createdAt: "2026-01-10T10:00:00Z",
-    updatedAt: "2026-01-10T10:00:00Z",
-  },
-  {
-    id: 2,
-    name: "Augmentin 625 Duo",
-    genericName: "Amoxicillin & Potassium Clavulanate",
-    manufacturer: "GlaxoSmithKline",
-    category: "Antibiotics",
-    description: "Broad-spectrum bacterial infections",
-    barcode: "8901234567891",
-    hsnCode: "30041000",
-    unit: "Strip",
-    lowStockThreshold: 15,
-    isActive: true,
-    createdAt: "2026-01-15T11:00:00Z",
-    updatedAt: "2026-01-15T11:00:00Z",
-  },
-  {
-    id: 3,
-    name: "Azithral 500 Tablet",
-    genericName: "Azithromycin 500mg",
-    manufacturer: "Alembic Pharma",
-    category: "Antibiotics",
-    description: "Respiratory and throat infections",
-    barcode: "8901234567892",
-    hsnCode: "30042000",
-    unit: "Strip",
-    lowStockThreshold: 10,
-    isActive: true,
-    createdAt: "2026-01-20T12:00:00Z",
-    updatedAt: "2026-01-20T12:00:00Z",
-  },
-  {
-    id: 4,
-    name: "Cetcip 10mg",
-    genericName: "Cetirizine Hydrochloride",
-    manufacturer: "Cipla Ltd",
-    category: "Antihistamine",
-    description: "Allergy, rhinitis, and hives",
-    barcode: "8901234567893",
-    hsnCode: "30049099",
-    unit: "Strip",
-    lowStockThreshold: 25,
-    isActive: true,
-    createdAt: "2026-01-25T09:30:00Z",
-    updatedAt: "2026-01-25T09:30:00Z",
-  },
-  {
-    id: 5,
-    name: "Pantocid 40mg Tablet",
-    genericName: "Pantoprazole 40mg",
-    manufacturer: "Sun Pharma",
-    category: "Antacid & Anti-ulcer",
-    description: "Acidity, GERD, and stomach ulcers",
-    barcode: "8901234567894",
-    hsnCode: "30049099",
-    unit: "Strip",
-    lowStockThreshold: 20,
-    isActive: true,
-    createdAt: "2026-02-01T14:15:00Z",
-    updatedAt: "2026-02-01T14:15:00Z",
-  },
-];
-
-const INITIAL_BATCHES: MedicineBatch[] = [
-  // Dolo 650 (2 batches: 1 safe, 1 expiring in 6 days)
-  {
-    id: 101,
-    medicineId: 1,
-    batchNumber: "DL-650-A1",
-    mfgDate: "2025-01-10",
-    expDate: getOffsetDateStr(365),
-    costPrice: 22.5,
-    mrp: 34.0,
-    sellingPrice: 31.0,
-    stockQty: 120,
-    isActive: true,
-    createdAt: "2026-01-10T10:00:00Z",
-  },
-  {
-    id: 102,
-    medicineId: 1,
-    batchNumber: "DL-650-EXP",
-    mfgDate: "2024-05-01",
-    expDate: getOffsetDateStr(6), // Expiring soon in 6 days!
-    costPrice: 20.0,
-    mrp: 32.0,
-    sellingPrice: 28.0,
-    stockQty: 15,
-    isActive: true,
-    createdAt: "2026-01-10T10:00:00Z",
-  },
-
-  // Augmentin 625 (Low Stock: total 6 units <= threshold 15)
-  {
-    id: 201,
-    medicineId: 2,
-    batchNumber: "AUG-24-99",
-    mfgDate: "2025-02-15",
-    expDate: getOffsetDateStr(400),
-    costPrice: 145.0,
-    mrp: 204.0,
-    sellingPrice: 190.0,
-    stockQty: 6,
-    isActive: true,
-    createdAt: "2026-01-15T11:00:00Z",
-  },
-
-  // Azithral 500 (Out of stock: 0 units)
-  {
-    id: 301,
-    medicineId: 3,
-    batchNumber: "AZ-500-OOS",
-    mfgDate: "2024-11-01",
-    expDate: getOffsetDateStr(180),
-    costPrice: 95.0,
-    mrp: 132.0,
-    sellingPrice: 120.0,
-    stockQty: 0,
-    isActive: true,
-    createdAt: "2026-01-20T12:00:00Z",
-  },
-
-  // Cetcip 10mg (Safe stock: 85 units)
-  {
-    id: 401,
-    medicineId: 4,
-    batchNumber: "CC-10-88",
-    mfgDate: "2025-01-01",
-    expDate: getOffsetDateStr(500),
-    costPrice: 12.0,
-    mrp: 21.0,
-    sellingPrice: 19.5,
-    stockQty: 85,
-    isActive: true,
-    createdAt: "2026-01-25T09:30:00Z",
-  },
-
-  // Pantocid 40mg (1 expired batch for alert verification)
-  {
-    id: 501,
-    medicineId: 5,
-    batchNumber: "PAN-EXP-01",
-    mfgDate: "2023-01-01",
-    expDate: getOffsetDateStr(-10), // Expired 10 days ago!
-    costPrice: 85.0,
-    mrp: 145.0,
-    sellingPrice: 135.0,
-    stockQty: 10,
-    isActive: true,
-    createdAt: "2026-02-01T14:15:00Z",
-  },
-  {
-    id: 502,
-    medicineId: 5,
-    batchNumber: "PAN-FRESH",
-    mfgDate: "2025-03-01",
-    expDate: getOffsetDateStr(600),
-    costPrice: 90.0,
-    mrp: 155.0,
-    sellingPrice: 142.0,
-    stockQty: 50,
-    isActive: true,
-    createdAt: "2026-02-01T14:15:00Z",
-  },
-];
-
-const INITIAL_MOVEMENTS: StockMovement[] = [
-  {
-    id: 1,
-    medicineId: 1,
-    batchId: 101,
-    batchNumber: "DL-650-A1",
-    medicineName: "Dolo 650 Tablet",
-    movementType: "OPENING_STOCK",
-    quantity: 120,
-    previousQty: 0,
-    newQty: 120,
-    reason: "Initial physical stock verification",
-    createdAt: "2026-01-10T10:00:00Z",
-  },
-  {
-    id: 2,
-    medicineId: 1,
-    batchId: 102,
-    batchNumber: "DL-650-EXP",
-    medicineName: "Dolo 650 Tablet",
-    movementType: "OPENING_STOCK",
-    quantity: 15,
-    previousQty: 0,
-    newQty: 15,
-    reason: "Initial physical stock verification",
-    createdAt: "2026-01-10T10:00:00Z",
-  },
-  {
-    id: 3,
-    medicineId: 2,
-    batchId: 201,
-    batchNumber: "AUG-24-99",
-    medicineName: "Augmentin 625 Duo",
-    movementType: "OPENING_STOCK",
-    quantity: 6,
-    previousQty: 0,
-    newQty: 6,
-    reason: "Initial physical stock verification",
-    createdAt: "2026-01-15T11:00:00Z",
-  },
-  {
-    id: 4,
-    medicineId: 4,
-    batchId: 401,
-    batchNumber: "CC-10-88",
-    medicineName: "Cetcip 10mg",
-    movementType: "OPENING_STOCK",
-    quantity: 85,
-    previousQty: 0,
-    newQty: 85,
-    reason: "Initial physical stock verification",
-    createdAt: "2026-01-25T09:30:00Z",
-  },
-];
-
 // Helper functions for persistent local store mirror
+// ----------------------------------------------------------------------
 function getLocalMedicines(): Medicine[] {
   try {
     const raw = localStorage.getItem(MEDICINES_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        // Strip out legacy hardcoded demo medicines if present
+        const cleaned = parsed.filter(
+          (m: Medicine) =>
+            !["Dolo 650 Tablet", "Augmentin 625 Duo", "Azithral 500 Tablet", "Cetcip 10mg", "Pantocid 40mg Tablet"].includes(
+              m.name
+            )
+        );
+        if (cleaned.length !== parsed.length) {
+          saveLocalMedicines(cleaned);
+        }
+        return cleaned;
+      }
+    }
   } catch {}
-  localStorage.setItem(MEDICINES_STORAGE_KEY, JSON.stringify(INITIAL_MEDICINES));
-  return INITIAL_MEDICINES;
+  return [];
 }
 
 function saveLocalMedicines(meds: Medicine[]): void {
@@ -336,10 +113,29 @@ function saveLocalMedicines(meds: Medicine[]): void {
 function getLocalBatches(): MedicineBatch[] {
   try {
     const raw = localStorage.getItem(BATCHES_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed.filter(
+          (b: MedicineBatch) =>
+            ![
+              "DL-650-A1",
+              "DL-650-EXP",
+              "AUG-24-99",
+              "AZ-500-OOS",
+              "CC-10-88",
+              "PAN-EXP-01",
+              "PAN-FRESH",
+            ].includes(b.batchNumber)
+        );
+        if (cleaned.length !== parsed.length) {
+          saveLocalBatches(cleaned);
+        }
+        return cleaned;
+      }
+    }
   } catch {}
-  localStorage.setItem(BATCHES_STORAGE_KEY, JSON.stringify(INITIAL_BATCHES));
-  return INITIAL_BATCHES;
+  return [];
 }
 
 function saveLocalBatches(batches: MedicineBatch[]): void {
@@ -349,10 +145,26 @@ function saveLocalBatches(batches: MedicineBatch[]): void {
 function getLocalMovements(): StockMovement[] {
   try {
     const raw = localStorage.getItem(MOVEMENTS_STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const cleaned = parsed.filter(
+          (m: StockMovement) =>
+            !Boolean(
+              m.medicineName &&
+                ["Dolo 650 Tablet", "Augmentin 625 Duo", "Azithral 500 Tablet", "Cetcip 10mg", "Pantocid 40mg Tablet"].includes(
+                  m.medicineName
+                )
+            )
+        );
+        if (cleaned.length !== parsed.length) {
+          saveLocalMovements(cleaned);
+        }
+        return cleaned;
+      }
+    }
   } catch {}
-  localStorage.setItem(MOVEMENTS_STORAGE_KEY, JSON.stringify(INITIAL_MOVEMENTS));
-  return INITIAL_MOVEMENTS;
+  return [];
 }
 
 function saveLocalMovements(movs: StockMovement[]): void {

@@ -30,7 +30,6 @@ import {
   ChevronUp,
   ChevronsUpDown,
   RotateCcw,
-  Boxes,
   Loader2,
   X,
   Package,
@@ -232,34 +231,28 @@ export const MedicinesPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 pb-12 select-none">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1600px] w-full min-w-0 mx-auto select-none">
       {/* 1. Header Toolbar */}
       <div className="bg-white rounded-2xl border border-medical-slate-200/80 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-xl font-bold text-medical-navy-950">
-              Medicine Inventory
-            </h1>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-medical-navy-50 text-medical-navy-800 border border-medical-navy-200">
-              <Boxes className="w-3.5 h-3.5 text-medical-navy-700" />
-              Live SQLite Master
-            </span>
-          </div>
+          <h1 className="text-xl font-bold text-medical-navy-950">
+            Medicine Inventory
+          </h1>
           <p className="text-xs text-medical-slate-500">
             Manage medicines, stock levels and expiry.
           </p>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex flex-wrap items-center gap-2.5 self-end md:self-auto">
+        <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
           <Button
             type="button"
             variant="outline"
             size="sm"
             onClick={() => setIsExportModalOpen(true)}
-            className="text-xs font-semibold h-9 px-3 border-medical-slate-300 hover:bg-medical-slate-50 cursor-pointer"
+            className="text-xs font-semibold h-9 px-3.5 border-medical-slate-300 hover:bg-medical-slate-50 text-medical-navy-900 cursor-pointer"
           >
-            <Download className="w-3.5 h-3.5 mr-1.5" />
+            <Download className="w-3.5 h-3.5 mr-1.5 text-medical-slate-500" />
             Export
           </Button>
 
@@ -268,9 +261,9 @@ export const MedicinesPage: React.FC = () => {
             variant="outline"
             size="sm"
             onClick={() => setIsImportModalOpen(true)}
-            className="text-xs font-semibold h-9 px-3 border-medical-slate-300 hover:bg-medical-slate-50 cursor-pointer"
+            className="text-xs font-semibold h-9 px-3.5 border-medical-slate-300 hover:bg-medical-slate-50 text-medical-navy-900 cursor-pointer"
           >
-            <Upload className="w-3.5 h-3.5 mr-1.5" />
+            <Upload className="w-3.5 h-3.5 mr-1.5 text-medical-slate-500" />
             Bulk Import
           </Button>
 
@@ -304,78 +297,82 @@ export const MedicinesPage: React.FC = () => {
       )}
 
       {/* 2. Four Important Summary KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-5 minmax(0, 1fr)">
         {/* Card 1: Total Medicines */}
-        <div className="bg-white rounded-2xl border border-medical-slate-200/80 p-5 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-medical-slate-500 uppercase tracking-wider">
+        <div className="bg-white rounded-2xl border border-medical-slate-200/80 p-4 sm:p-5 shadow-xs flex flex-col justify-between min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold text-medical-slate-500 uppercase tracking-wider">
               Total Medicines
             </span>
-            <div className="p-2.5 rounded-xl bg-medical-navy-50 text-medical-navy-900">
+            <div className="p-2 rounded-xl bg-medical-navy-50 text-medical-navy-900 shrink-0">
               <Pill className="w-4 h-4" />
             </div>
           </div>
-          <div className="space-y-1 mt-3">
-            <span className="text-2xl font-extrabold text-medical-navy-950 font-mono">
-              {summary ? summary.totalMedicines : "—"}
-            </span>
-            <p className="text-[11px] text-medical-slate-500 font-medium">
-              {summary ? `${summary.totalStockUnits} total stock units in pharmacy` : "Loading..."}
+          <div className="mt-2 space-y-0.5">
+            <div className="text-2xl sm:text-3xl font-bold text-medical-navy-950 font-sans tabular-nums">
+              {summary ? summary.totalMedicines : 0}
+            </div>
+            <p className="text-xs text-medical-slate-500 truncate">
+              {summary && summary.totalStockUnits > 0
+                ? `${summary.totalStockUnits.toLocaleString("en-IN")} total units in stock`
+                : "No stock units registered"}
             </p>
           </div>
         </div>
 
         {/* Card 2: Top Selling Medicines */}
-        <div className="bg-white rounded-2xl border border-medical-slate-200/80 p-5 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-medical-slate-500 uppercase tracking-wider">
+        <div className="bg-white rounded-2xl border border-medical-slate-200/80 p-4 sm:p-5 shadow-xs flex flex-col justify-between min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold text-medical-slate-500 uppercase tracking-wider">
               Top Selling Medicines
             </span>
-            <div className="p-2.5 rounded-xl bg-medical-green-50 text-medical-green-800">
+            <div className="p-2 rounded-xl bg-medical-green-50 text-medical-green-800 shrink-0">
               <TrendingUp className="w-4 h-4" />
             </div>
           </div>
-          <div className="space-y-1 mt-3">
-            <span className="text-2xl font-extrabold text-medical-navy-950 font-mono">
-              {summary?.medicinesWithSales ?? 0}
-            </span>
-            <p className="text-[11px] text-medical-slate-500 italic">
+          <div className="mt-2 space-y-0.5">
+            <div className="text-2xl sm:text-3xl font-bold text-medical-navy-950 font-sans tabular-nums">
+              {summary ? summary.medicinesWithSales : 0}
+            </div>
+            <p className="text-xs text-medical-slate-500 truncate">
               {summary && summary.medicinesWithSales > 0
-                ? "Based on completed invoices"
+                ? "Based on completed sales"
                 : "Sales data will appear after billing is enabled."}
             </p>
           </div>
         </div>
 
-        {/* Card 3: Low Stock / Stock Running Out (Clickable filter) */}
+        {/* Card 3: Low Stock / Running Out (Clickable filter) */}
         <div
           onClick={handleFilterLowStockCard}
-          className={`bg-white rounded-2xl border p-5 shadow-xs flex flex-col justify-between cursor-pointer transition-all hover:border-amber-400 group ${
+          className={`bg-white rounded-2xl border p-4 sm:p-5 shadow-xs flex flex-col justify-between min-w-0 cursor-pointer transition-all hover:border-amber-400 group ${
             stockStatusFilter === "LOW_STOCK"
-              ? "ring-2 ring-amber-400 border-amber-400 bg-amber-50/20"
-              : "border-medical-slate-200/80"
+              ? "border-amber-500 ring-2 ring-amber-500/20 bg-amber-50/20"
+              : "border-medical-slate-200/80 hover:shadow-sm"
           }`}
           title="Click to filter low stock medicines"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-900 uppercase tracking-wider group-hover:text-amber-800">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold text-amber-900 uppercase tracking-wider group-hover:text-amber-800">
               Low Stock / Running Out
             </span>
-            <div className="p-2.5 rounded-xl bg-amber-100 text-amber-800">
+            <div className="p-2 rounded-xl bg-amber-50 text-amber-700 shrink-0">
               <AlertTriangle className="w-4 h-4" />
             </div>
           </div>
-          <div className="space-y-1 mt-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold text-amber-700 font-mono">
-                {summary ? summary.lowStockCount : "—"}
+          <div className="mt-2 space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-2xl sm:text-3xl font-bold text-amber-600 font-sans tabular-nums">
+                {summary ? summary.lowStockCount : 0}
               </span>
-              <span className="text-xs font-bold text-medical-slate-400 font-mono">
-                / {summary ? summary.outOfStockCount : 0} out of stock
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 whitespace-nowrap">
+                {summary ? summary.outOfStockCount : 0} out of stock
               </span>
             </div>
-            <p className="text-[11px] text-medical-slate-500 font-medium">
-              Click to {stockStatusFilter === "LOW_STOCK" ? "clear filter" : "filter low stock"}
+            <p className="text-xs text-medical-slate-500 truncate">
+              {stockStatusFilter === "LOW_STOCK"
+                ? "Active filter • Click to clear"
+                : "Medicines at or below threshold"}
             </p>
           </div>
         </div>
@@ -383,43 +380,45 @@ export const MedicinesPage: React.FC = () => {
         {/* Card 4: Expiring Soon (Clickable filter) */}
         <div
           onClick={handleFilterExpiringCard}
-          className={`bg-white rounded-2xl border p-5 shadow-xs flex flex-col justify-between cursor-pointer transition-all hover:border-red-400 group ${
+          className={`bg-white rounded-2xl border p-4 sm:p-5 shadow-xs flex flex-col justify-between min-w-0 cursor-pointer transition-all hover:border-red-400 group ${
             expiryStatusFilter === "EXPIRING_SOON"
-              ? "ring-2 ring-red-400 border-red-400 bg-red-50/20"
-              : "border-medical-slate-200/80"
+              ? "border-red-500 ring-2 ring-red-500/20 bg-red-50/20"
+              : "border-medical-slate-200/80 hover:shadow-sm"
           }`}
           title="Click to filter medicines expiring within 10 days"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-red-900 uppercase tracking-wider group-hover:text-red-800">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-bold text-red-900 uppercase tracking-wider group-hover:text-red-800">
               Expiring Soon (≤10 Days)
             </span>
-            <div className="p-2.5 rounded-xl bg-red-100 text-red-800">
+            <div className="p-2 rounded-xl bg-red-50 text-red-700 shrink-0">
               <Clock className="w-4 h-4" />
             </div>
           </div>
-          <div className="space-y-1 mt-3">
-            <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-extrabold text-red-700 font-mono">
-                {summary ? summary.expiringSoonCount : "—"}
+          <div className="mt-2 space-y-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-2xl sm:text-3xl font-bold text-red-600 font-sans tabular-nums">
+                {summary ? summary.expiringSoonCount : 0}
               </span>
-              <span className="text-xs font-bold text-medical-slate-400 font-mono">
-                / {summary ? summary.expiredCount : 0} expired
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 whitespace-nowrap">
+                {summary ? summary.expiredCount : 0} expired
               </span>
             </div>
-            <p className="text-[11px] text-medical-slate-500 font-medium">
-              Click to {expiryStatusFilter === "EXPIRING_SOON" ? "clear filter" : "filter expiring"}
+            <p className="text-xs text-medical-slate-500 truncate">
+              {expiryStatusFilter === "EXPIRING_SOON"
+                ? "Active filter • Click to clear"
+                : "Batches expiring within 10 days"}
             </p>
           </div>
         </div>
       </div>
 
       {/* 3. Search and Multi-Filter Bar */}
-      <div className="bg-white rounded-2xl border border-medical-slate-200/80 p-4 shadow-xs space-y-3">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          {/* Fast Search Input */}
-          <div className="relative flex-1 max-w-xl">
-            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-medical-slate-400" />
+      <div className="bg-white rounded-2xl border border-medical-slate-200/80 p-4 sm:p-5 shadow-xs space-y-3">
+        {/* Row 1: Search full-width with result count on right */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-medical-slate-400" />
             <input
               type="text"
               value={search}
@@ -427,14 +426,15 @@ export const MedicinesPage: React.FC = () => {
                 setSearch(e.target.value);
                 setCurrentPage(1);
               }}
-              placeholder="Search by medicine name, generic name, manufacturer, batch, or barcode..."
+              placeholder="Search by medicine name, generic name, manufacturer, batch number, or barcode..."
               className="w-full h-9 pl-9 pr-8 rounded-xl border border-medical-slate-300 text-xs bg-medical-slate-50/50 text-medical-slate-900 placeholder:text-medical-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-medical-navy-100 focus-visible:border-medical-navy-600 transition-colors"
             />
             {search && (
               <button
                 type="button"
                 onClick={() => setSearch("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-medical-slate-400 hover:text-medical-navy-950"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-medical-slate-400 hover:text-medical-navy-950 p-1"
+                aria-label="Clear search text"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
@@ -442,9 +442,9 @@ export const MedicinesPage: React.FC = () => {
           </div>
 
           {/* Result Count and Clear Filters */}
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-medical-slate-500 font-medium font-mono">
-              Showing <strong>{filteredMedicines.length}</strong> of {medicines.length} medicines
+          <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+            <span className="text-xs text-medical-slate-500 font-medium tabular-nums whitespace-nowrap">
+              Showing <strong className="text-medical-navy-950">{filteredMedicines.length}</strong> of {medicines.length} medicines
             </span>
 
             {hasActiveFilters && (
@@ -453,17 +453,17 @@ export const MedicinesPage: React.FC = () => {
                 variant="outline"
                 size="sm"
                 onClick={handleClearFilters}
-                className="text-xs h-8 px-2.5 text-medical-slate-600 hover:text-red-700 hover:bg-red-50 border-medical-slate-300 cursor-pointer"
+                className="text-xs h-9 px-3 text-red-700 bg-red-50/50 hover:bg-red-50 border-red-200 cursor-pointer shrink-0"
               >
-                <RotateCcw className="w-3 h-3 mr-1" />
-                Clear Filters
+                <RotateCcw className="w-3.5 h-3.5 mr-1 text-red-600" />
+                Clear filters
               </Button>
             )}
           </div>
         </div>
 
-        {/* Filter Dropdowns Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-medical-slate-100 text-xs">
+        {/* Row 2: Equal grid of 4 filter selects with consistent height (h-9) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-medical-slate-100 text-xs">
           {/* Stock Status */}
           <div className="space-y-1">
             <label className="text-[10px] uppercase font-bold text-medical-slate-500 block tracking-wider">
@@ -475,7 +475,7 @@ export const MedicinesPage: React.FC = () => {
                 setStockStatusFilter(e.target.value as typeof stockStatusFilter);
                 setCurrentPage(1);
               }}
-              className="w-full h-8 rounded-lg border border-medical-slate-300 px-2.5 text-xs bg-white text-medical-slate-800 font-medium"
+              className="w-full h-9 rounded-xl border border-medical-slate-300 px-3 text-xs bg-white text-medical-slate-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-medical-navy-100 focus-visible:border-medical-navy-600"
             >
               <option value="ALL">All Stock Levels</option>
               <option value="IN_STOCK">In Stock</option>
@@ -495,7 +495,7 @@ export const MedicinesPage: React.FC = () => {
                 setExpiryStatusFilter(e.target.value as typeof expiryStatusFilter);
                 setCurrentPage(1);
               }}
-              className="w-full h-8 rounded-lg border border-medical-slate-300 px-2.5 text-xs bg-white text-medical-slate-800 font-medium"
+              className="w-full h-9 rounded-xl border border-medical-slate-300 px-3 text-xs bg-white text-medical-slate-800 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-medical-navy-100 focus-visible:border-medical-navy-600"
             >
               <option value="ALL">All Expiry Dates</option>
               <option value="EXPIRING_SOON">Expiring Soon (≤10 Days)</option>
@@ -515,7 +515,7 @@ export const MedicinesPage: React.FC = () => {
                 setManufacturerFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full h-8 rounded-lg border border-medical-slate-300 px-2.5 text-xs bg-white text-medical-slate-800 font-medium truncate"
+              className="w-full h-9 rounded-xl border border-medical-slate-300 px-3 text-xs bg-white text-medical-slate-800 font-medium truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-medical-navy-100 focus-visible:border-medical-navy-600"
             >
               <option value="ALL">All Manufacturers</option>
               {manufacturers.map((m) => (
@@ -537,7 +537,7 @@ export const MedicinesPage: React.FC = () => {
                 setCategoryFilter(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full h-8 rounded-lg border border-medical-slate-300 px-2.5 text-xs bg-white text-medical-slate-800 font-medium truncate"
+              className="w-full h-9 rounded-xl border border-medical-slate-300 px-3 text-xs bg-white text-medical-slate-800 font-medium truncate focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-medical-navy-100 focus-visible:border-medical-navy-600"
             >
               <option value="ALL">All Categories</option>
               {categories.map((c) => (
@@ -554,20 +554,20 @@ export const MedicinesPage: React.FC = () => {
       <div className="bg-white rounded-2xl border border-medical-slate-200/80 shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-medical-slate-50/80 border-b border-medical-slate-200 text-medical-slate-700 font-bold text-[11px] uppercase tracking-wider">
+            <thead className="sticky top-0 bg-medical-slate-50 z-10 shadow-[0_1px_0_0_#e2e8f0]">
+              <tr className="border-b border-medical-slate-200 text-medical-slate-600 font-bold text-[11px] uppercase tracking-wider">
                 {/* Column: Name */}
                 <th
                   onClick={() => handleSort("name")}
-                  className="py-3 px-4 cursor-pointer hover:bg-medical-slate-100 transition-colors select-none"
+                  className="py-3 px-4 cursor-pointer hover:bg-medical-slate-100 transition-colors select-none min-w-[220px]"
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Medicine Name</span>
                     {sortField === "name" ? (
                       sortDirection === "asc" ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
+                        <ChevronUp className="w-3.5 h-3.5 text-medical-navy-900" />
                       ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
+                        <ChevronDown className="w-3.5 h-3.5 text-medical-navy-900" />
                       )
                     ) : (
                       <ChevronsUpDown className="w-3.5 h-3.5 text-medical-slate-400" />
@@ -578,15 +578,15 @@ export const MedicinesPage: React.FC = () => {
                 {/* Column: Manufacturer */}
                 <th
                   onClick={() => handleSort("manufacturer")}
-                  className="py-3 px-3 cursor-pointer hover:bg-medical-slate-100 transition-colors select-none"
+                  className="py-3 px-3 cursor-pointer hover:bg-medical-slate-100 transition-colors select-none min-w-[140px]"
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Manufacturer</span>
                     {sortField === "manufacturer" ? (
                       sortDirection === "asc" ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
+                        <ChevronUp className="w-3.5 h-3.5 text-medical-navy-900" />
                       ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
+                        <ChevronDown className="w-3.5 h-3.5 text-medical-navy-900" />
                       )
                     ) : (
                       <ChevronsUpDown className="w-3.5 h-3.5 text-medical-slate-400" />
@@ -594,20 +594,20 @@ export const MedicinesPage: React.FC = () => {
                   </div>
                 </th>
 
-                <th className="py-3 px-3">Active Batches</th>
+                <th className="py-3 px-3 whitespace-nowrap">Active Batches</th>
 
                 {/* Column: Expiry Date */}
                 <th
                   onClick={() => handleSort("nearestExpiryDate")}
-                  className="py-3 px-3 cursor-pointer hover:bg-medical-slate-100 transition-colors select-none"
+                  className="py-3 px-3 cursor-pointer hover:bg-medical-slate-100 transition-colors select-none whitespace-nowrap"
                 >
                   <div className="flex items-center gap-1.5">
                     <span>Nearest Expiry</span>
                     {sortField === "nearestExpiryDate" ? (
                       sortDirection === "asc" ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
+                        <ChevronUp className="w-3.5 h-3.5 text-medical-navy-900" />
                       ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
+                        <ChevronDown className="w-3.5 h-3.5 text-medical-navy-900" />
                       )
                     ) : (
                       <ChevronsUpDown className="w-3.5 h-3.5 text-medical-slate-400" />
@@ -615,20 +615,20 @@ export const MedicinesPage: React.FC = () => {
                   </div>
                 </th>
 
-                <th className="py-3 px-3">Cost Price</th>
+                <th className="py-3 px-3 text-right whitespace-nowrap">Cost Price</th>
 
                 {/* Column: MRP */}
                 <th
                   onClick={() => handleSort("minMrp")}
-                  className="py-3 px-3 cursor-pointer hover:bg-medical-slate-100 transition-colors select-none"
+                  className="py-3 px-3 text-right cursor-pointer hover:bg-medical-slate-100 transition-colors select-none whitespace-nowrap"
                 >
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-end gap-1.5">
                     <span>MRP</span>
                     {sortField === "minMrp" ? (
                       sortDirection === "asc" ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
+                        <ChevronUp className="w-3.5 h-3.5 text-medical-navy-900" />
                       ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
+                        <ChevronDown className="w-3.5 h-3.5 text-medical-navy-900" />
                       )
                     ) : (
                       <ChevronsUpDown className="w-3.5 h-3.5 text-medical-slate-400" />
@@ -639,15 +639,15 @@ export const MedicinesPage: React.FC = () => {
                 {/* Column: Selling Price */}
                 <th
                   onClick={() => handleSort("minSellingPrice")}
-                  className="py-3 px-3 cursor-pointer hover:bg-medical-slate-100 transition-colors select-none"
+                  className="py-3 px-3 text-right cursor-pointer hover:bg-medical-slate-100 transition-colors select-none whitespace-nowrap"
                 >
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-end gap-1.5">
                     <span>Selling Price</span>
                     {sortField === "minSellingPrice" ? (
                       sortDirection === "asc" ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
+                        <ChevronUp className="w-3.5 h-3.5 text-medical-navy-900" />
                       ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
+                        <ChevronDown className="w-3.5 h-3.5 text-medical-navy-900" />
                       )
                     ) : (
                       <ChevronsUpDown className="w-3.5 h-3.5 text-medical-slate-400" />
@@ -658,15 +658,15 @@ export const MedicinesPage: React.FC = () => {
                 {/* Column: Stock */}
                 <th
                   onClick={() => handleSort("totalStock")}
-                  className="py-3 px-3 cursor-pointer hover:bg-medical-slate-100 transition-colors select-none"
+                  className="py-3 px-3 text-right cursor-pointer hover:bg-medical-slate-100 transition-colors select-none whitespace-nowrap"
                 >
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center justify-end gap-1.5">
                     <span>Available Stock</span>
                     {sortField === "totalStock" ? (
                       sortDirection === "asc" ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
+                        <ChevronUp className="w-3.5 h-3.5 text-medical-navy-900" />
                       ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
+                        <ChevronDown className="w-3.5 h-3.5 text-medical-navy-900" />
                       )
                     ) : (
                       <ChevronsUpDown className="w-3.5 h-3.5 text-medical-slate-400" />
@@ -674,8 +674,8 @@ export const MedicinesPage: React.FC = () => {
                   </div>
                 </th>
 
-                <th className="py-3 px-3">Stock Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+                <th className="py-3 px-3 whitespace-nowrap">Stock Status</th>
+                <th className="py-3 px-4 text-right whitespace-nowrap">Actions</th>
               </tr>
             </thead>
 
@@ -683,16 +683,55 @@ export const MedicinesPage: React.FC = () => {
               {isLoading ? (
                 <tr>
                   <td colSpan={10} className="py-12 text-center text-medical-slate-500">
-                    <Loader2 className="w-8 h-8 animate-spin mx-auto text-medical-navy-600 mb-2" />
+                    <Loader2 className="w-7 h-7 animate-spin mx-auto text-medical-navy-600 mb-2" />
                     Loading medicine inventory records...
+                  </td>
+                </tr>
+              ) : medicines.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="py-16 text-center">
+                    <div className="max-w-md mx-auto space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-medical-navy-50 text-medical-navy-800 flex items-center justify-center mx-auto border border-medical-navy-100">
+                        <Package className="w-6 h-6 text-medical-navy-700" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-base font-bold text-medical-navy-950">
+                          No medicines in inventory yet
+                        </p>
+                        <p className="text-xs text-medical-slate-500">
+                          Your inventory is empty. Add your first medicine or use Bulk Import to get started.
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-center gap-3 pt-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => setIsAddModalOpen(true)}
+                          className="h-9 px-4 text-xs font-bold bg-medical-navy-900 hover:bg-medical-navy-800 text-white cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5 mr-1.5" />
+                          Add Medicine
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsImportModalOpen(true)}
+                          className="h-9 px-4 text-xs font-semibold border-medical-slate-300 hover:bg-medical-slate-50 text-medical-navy-900 cursor-pointer"
+                        >
+                          <Upload className="w-3.5 h-3.5 mr-1.5" />
+                          Bulk Import
+                        </Button>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               ) : paginatedMedicines.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-12 text-center text-medical-slate-400 space-y-2">
-                    <Package className="w-8 h-8 mx-auto text-medical-slate-300" />
-                    <p className="font-semibold text-medical-slate-600">
-                      No medicines matched your search or filters.
+                  <td colSpan={10} className="py-12 text-center text-medical-slate-500 space-y-2">
+                    <Package className="w-7 h-7 mx-auto text-medical-slate-300" />
+                    <p className="font-semibold text-medical-slate-700 text-xs">
+                      No medicines matched your search or filter criteria.
                     </p>
                     {hasActiveFilters && (
                       <Button
@@ -700,8 +739,9 @@ export const MedicinesPage: React.FC = () => {
                         variant="outline"
                         size="sm"
                         onClick={handleClearFilters}
-                        className="text-xs h-7 px-3 mt-1"
+                        className="text-xs h-8 px-3 text-red-700 border-red-200 hover:bg-red-50 mt-1 cursor-pointer"
                       >
+                        <RotateCcw className="w-3 h-3 mr-1 text-red-600" />
                         Reset All Filters
                       </Button>
                     )}
@@ -709,7 +749,7 @@ export const MedicinesPage: React.FC = () => {
                 </tr>
               ) : (
                 paginatedMedicines.map((m) => (
-                  <tr key={m.id} className="hover:bg-medical-slate-50/70 transition-colors group">
+                  <tr key={m.id} className="hover:bg-medical-slate-50/80 transition-colors group">
                     {/* Name & Generic */}
                     <td className="py-3 px-4">
                       <div className="space-y-0.5">
@@ -717,9 +757,9 @@ export const MedicinesPage: React.FC = () => {
                           {m.name}
                         </span>
                         <div className="flex items-center gap-1.5 text-[10px] text-medical-slate-500">
-                          {m.genericName && <span className="truncate max-w-xs">{m.genericName}</span>}
+                          {m.genericName && <span className="truncate max-w-[200px]">{m.genericName}</span>}
                           {m.category && (
-                            <span className="bg-medical-slate-100 px-1.5 py-0.2 rounded font-mono text-medical-slate-600">
+                            <span className="bg-medical-slate-100 px-1.5 py-0.5 rounded text-medical-slate-600 font-sans">
                               {m.category}
                             </span>
                           )}
@@ -733,110 +773,101 @@ export const MedicinesPage: React.FC = () => {
                     </td>
 
                     {/* Active Batches */}
-                    <td className="py-3 px-3">
-                      <div className="flex items-center gap-1 font-mono text-[11px]">
-                        <span className="font-bold text-medical-navy-950">
-                          {m.activeBatchesCount} {m.activeBatchesCount === 1 ? "Batch" : "Batches"}
-                        </span>
-                        {m.nearestBatchNumber && (
-                          <span className="text-[10px] text-medical-slate-400">
-                            ({m.nearestBatchNumber})
-                          </span>
-                        )}
-                      </div>
+                    <td className="py-3 px-3 whitespace-nowrap">
+                      <span
+                        className="text-xs font-medium text-medical-slate-700 tabular-nums font-sans"
+                        title={m.nearestBatchNumber ? `Nearest batch: ${m.nearestBatchNumber}` : undefined}
+                      >
+                        {m.activeBatchesCount} {m.activeBatchesCount === 1 ? "batch" : "batches"}
+                      </span>
                     </td>
 
                     {/* Nearest Expiry */}
-                    <td className="py-3 px-3">
+                    <td className="py-3 px-3 whitespace-nowrap">
                       {m.nearestExpiryDate ? (
-                        <div className="space-y-0.5">
-                          <span className="font-mono text-xs font-semibold text-medical-slate-800 block">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-sans tabular-nums text-xs font-semibold text-medical-slate-800">
                             {m.nearestExpiryDate}
                           </span>
                           {m.expiryStatus === "EXPIRED" && (
-                            <span className="inline-block px-1.5 py-0.2 rounded text-[10px] font-bold bg-red-100 text-red-800">
-                              EXPIRED
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">
+                              Expired
                             </span>
                           )}
                           {m.expiryStatus === "EXPIRING_SOON" && (
-                            <span className="inline-block px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-700">
                               Expiring &le;10d
                             </span>
                           )}
                           {m.expiryStatus === "SAFE" && (
-                            <span className="inline-block px-1.5 py-0.2 rounded text-[10px] font-bold bg-medical-green-50 text-medical-green-700">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700">
                               Safe
                             </span>
                           )}
                         </div>
                       ) : (
-                        <span className="text-medical-slate-400 italic">No batches</span>
+                        <span className="text-medical-slate-400 text-xs">No batches</span>
                       )}
                     </td>
 
                     {/* Cost Price */}
-                    <td className="py-3 px-3 font-mono text-medical-slate-600">
+                    <td className="py-3 px-3 text-right font-sans tabular-nums text-medical-slate-600 whitespace-nowrap">
                       {m.activeBatchesCount > 0 ? formatCurrencyINR(m.minCostPrice) : "—"}
                     </td>
 
                     {/* MRP */}
-                    <td className="py-3 px-3 font-mono font-bold text-medical-slate-900">
+                    <td className="py-3 px-3 text-right font-sans tabular-nums font-semibold text-medical-slate-900 whitespace-nowrap">
                       {m.activeBatchesCount > 0 ? formatCurrencyINR(m.minMrp) : "—"}
                     </td>
 
                     {/* Selling Price */}
-                    <td className="py-3 px-3 font-mono font-bold text-medical-green-700">
+                    <td className="py-3 px-3 text-right font-sans tabular-nums font-bold text-medical-green-700 whitespace-nowrap">
                       {m.activeBatchesCount > 0 ? formatCurrencyINR(m.minSellingPrice) : "—"}
                     </td>
 
                     {/* Available Stock */}
-                    <td className="py-3 px-3">
-                      <span className="font-mono font-extrabold text-medical-navy-950 text-sm">
-                        {m.totalStock}
+                    <td className="py-3 px-3 text-right font-sans tabular-nums whitespace-nowrap">
+                      <span className="font-bold text-medical-navy-950 text-sm">
+                        {m.totalStock.toLocaleString("en-IN")}
                       </span>
-                      <span className="text-[11px] text-medical-slate-500 font-medium ml-1">
+                      <span className="text-[11px] font-normal text-medical-slate-500 ml-1">
                         {m.unit}s
                       </span>
                     </td>
 
                     {/* Stock Status */}
-                    <td className="py-3 px-3">
+                    <td className="py-3 px-3 whitespace-nowrap">
                       {m.stockStatus === "OUT_OF_STOCK" && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 border border-red-200">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 border border-red-200">
                           Out of Stock
                         </span>
                       )}
                       {m.stockStatus === "LOW_STOCK" && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
                           Low Stock
                         </span>
                       )}
                       {m.stockStatus === "IN_STOCK" && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-medical-green-100 text-medical-green-800 border border-medical-green-200">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-medical-green-100 text-medical-green-800 border border-medical-green-200">
                           In Stock
                         </span>
                       )}
                     </td>
 
                     {/* Actions */}
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
-                        <Button
+                        <button
                           type="button"
-                          variant="outline"
-                          size="sm"
                           onClick={() => setViewMedicineId(m.id)}
-                          className="h-7 px-2 text-xs border-medical-slate-300 hover:bg-medical-slate-100 cursor-pointer"
-                          title="View Batches & Audit Trail"
+                          className="h-8 w-8 rounded-lg border border-medical-slate-300 text-medical-slate-700 hover:text-medical-navy-900 hover:bg-medical-slate-100 inline-flex items-center justify-center cursor-pointer transition-colors"
+                          title="View Details & Batches"
                         >
-                          <Eye className="w-3 h-3 mr-1" />
-                          View
-                        </Button>
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
 
-                        <Button
+                        <button
                           type="button"
-                          variant="outline"
-                          size="sm"
                           onClick={() => {
                             if (m.batches.length === 0) {
                               setViewMedicineId(m.id);
@@ -850,11 +881,11 @@ export const MedicinesPage: React.FC = () => {
                               });
                             }
                           }}
-                          className="h-7 px-2 text-xs border-medical-slate-300 hover:bg-medical-slate-100 cursor-pointer"
+                          className="h-8 w-8 rounded-lg border border-medical-slate-300 text-medical-slate-700 hover:text-medical-navy-900 hover:bg-medical-slate-100 inline-flex items-center justify-center cursor-pointer transition-colors"
                           title="Adjust Stock Quantity"
                         >
-                          <Sliders className="w-3 h-3" />
-                        </Button>
+                          <Sliders className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -865,7 +896,7 @@ export const MedicinesPage: React.FC = () => {
         </div>
 
         {/* 5. Pagination Footer */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border-t border-medical-slate-200 bg-medical-slate-50/60 text-xs text-medical-slate-600 gap-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3.5 sm:p-4 border-t border-medical-slate-200 bg-medical-slate-50/60 text-xs text-medical-slate-600 gap-3">
           <div className="flex items-center gap-2">
             <span>Rows per page:</span>
             <select
@@ -874,7 +905,7 @@ export const MedicinesPage: React.FC = () => {
                 setRowsPerPage(parseInt(e.target.value, 10));
                 setCurrentPage(1);
               }}
-              className="h-7 rounded border border-medical-slate-300 px-2 bg-white text-xs font-semibold"
+              className="h-8 rounded-lg border border-medical-slate-300 px-2 bg-white text-xs font-semibold focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-medical-navy-600"
             >
               <option value={10}>10</option>
               <option value={25}>25</option>
@@ -882,30 +913,32 @@ export const MedicinesPage: React.FC = () => {
             </select>
           </div>
 
-          <div className="flex items-center gap-2 self-end sm:self-auto font-mono">
+          <div className="flex items-center gap-2 self-end sm:self-auto tabular-nums">
             <span>
               Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
             </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="h-7 px-2.5 text-xs cursor-pointer disabled:opacity-30"
-            >
-              Prev
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="h-7 px-2.5 text-xs cursor-pointer disabled:opacity-30"
-            >
-              Next
-            </Button>
+            <div className="flex items-center gap-1 ml-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="h-8 px-2.5 text-xs cursor-pointer disabled:opacity-40"
+              >
+                Previous
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="h-8 px-2.5 text-xs cursor-pointer disabled:opacity-40"
+              >
+                Next
+              </Button>
+            </div>
           </div>
         </div>
       </div>
