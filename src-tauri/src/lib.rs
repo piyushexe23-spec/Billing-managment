@@ -62,13 +62,13 @@ fn remove_store_logo(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Retrieves all active medicines with their active batches
+/// Retrieves all active medicines with their active batches (or all including archived)
 #[tauri::command]
-fn get_medicines(app: tauri::AppHandle) -> Result<Vec<db::MedicineWithBatches>, String> {
+fn get_medicines(app: tauri::AppHandle, include_archived: Option<bool>) -> Result<Vec<db::MedicineWithBatches>, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let db_path = app_data_dir.join("im_medicos.db");
     let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
-    db::fetch_medicines_with_batches(&conn).map_err(|e| e.to_string())
+    db::fetch_medicines_with_batches(&conn, include_archived.unwrap_or(false)).map_err(|e| e.to_string())
 }
 
 /// Retrieves a specific medicine by ID with batches
@@ -115,17 +115,75 @@ fn create_medicine(
     .map_err(|e| e.to_string())
 }
 
-/// Adds a new batch to an existing medicine
+/// Updates medicine master details
+#[tauri::command]
+fn update_medicine(app: tauri::AppHandle, medicine: db::MedicineMasterInput) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::update_medicine(&conn, &medicine).map_err(|e| e.to_string())
+}
+
+/// Adds a new batch to an existing medicine or increments existing batch quantity
 #[tauri::command]
 fn add_medicine_batch(
     app: tauri::AppHandle,
     medicine_id: i64,
-    batch: db::MedicineBatch,
+    batch_number: String,
+    mfg_date: Option<String>,
+    exp_date: String,
+    cost_price: f64,
+    mrp: f64,
+    selling_price: f64,
+    quantity_received: i64,
+    note: Option<String>,
+    add_to_existing: Option<bool>,
 ) -> Result<i64, String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let db_path = app_data_dir.join("im_medicos.db");
     let mut conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
-    db::insert_batch(&mut conn, medicine_id, &batch).map_err(|e| e.to_string())
+    db::add_or_increment_batch(
+        &mut conn,
+        medicine_id,
+        &batch_number,
+        mfg_date.as_deref(),
+        &exp_date,
+        cost_price,
+        mrp,
+        selling_price,
+        quantity_received,
+        note.as_deref(),
+        add_to_existing.unwrap_or(false),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Updates batch details (number, dates, prices)
+#[tauri::command]
+fn update_batch(
+    app: tauri::AppHandle,
+    batch_id: i64,
+    batch_number: String,
+    mfg_date: Option<String>,
+    exp_date: String,
+    cost_price: f64,
+    mrp: f64,
+    selling_price: f64,
+) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::update_batch_details(
+        &conn,
+        batch_id,
+        &batch_number,
+        mfg_date.as_deref(),
+        &exp_date,
+        cost_price,
+        mrp,
+        selling_price,
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// Adjusts stock for a specific batch and records movement history
@@ -152,6 +210,33 @@ fn archive_medicine(app: tauri::AppHandle, medicine_id: i64) -> Result<(), Strin
     let db_path = app_data_dir.join("im_medicos.db");
     let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
     db::archive_medicine(&conn, medicine_id).map_err(|e| e.to_string())
+}
+
+/// Restores an archived medicine record
+#[tauri::command]
+fn restore_medicine(app: tauri::AppHandle, medicine_id: i64) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::restore_medicine(&conn, medicine_id).map_err(|e| e.to_string())
+}
+
+/// Checks if a medicine can be permanently deleted
+#[tauri::command]
+fn can_delete_medicine(app: tauri::AppHandle, medicine_id: i64) -> Result<(bool, String), String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::check_can_delete_medicine(&conn, medicine_id).map_err(|e| e.to_string())
+}
+
+/// Permanently deletes an empty medicine that has zero movements and zero stock
+#[tauri::command]
+fn delete_medicine(app: tauri::AppHandle, medicine_id: i64) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let mut conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::delete_medicine_permanently(&mut conn, medicine_id).map_err(|e| e.to_string())
 }
 
 /// Fetches stock movement audit history for a medicine
@@ -199,9 +284,14 @@ pub fn run() {
             get_medicines,
             get_medicine_by_id,
             create_medicine,
+            update_medicine,
             add_medicine_batch,
+            update_batch,
             adjust_stock,
             archive_medicine,
+            restore_medicine,
+            can_delete_medicine,
+            delete_medicine,
             get_stock_movements,
             get_inventory_summary
         ])

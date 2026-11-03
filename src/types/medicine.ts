@@ -97,6 +97,7 @@ export interface MedicineListItem {
   minSellingPrice: number;
   maxSellingPrice: number;
   activeBatchesCount: number;
+  isActive: boolean;
   batches: MedicineBatch[];
 }
 
@@ -122,6 +123,7 @@ export interface MedicineFilterOptions {
   expiryStatus: "ALL" | ExpiryStatus;
   manufacturer: string;
   category: string;
+  showArchived?: boolean;
   minStock?: number;
   maxStock?: number;
   expiryDateFrom?: string;
@@ -157,6 +159,43 @@ export interface CreateMedicineInput {
     sellingPrice: number;
     stockQty: number;
   };
+}
+
+export interface UpdateMedicineInput {
+  id: number;
+  name: string;
+  genericName?: string | null;
+  manufacturer?: string | null;
+  category?: string | null;
+  description?: string | null;
+  barcode?: string | null;
+  hsnCode?: string | null;
+  unit: string;
+  lowStockThreshold: number;
+}
+
+export interface AddNewBatchInput {
+  medicineId: number;
+  batchNumber: string;
+  mfgDate?: string | null;
+  expDate: string;
+  quantityReceived: number;
+  costPrice: number;
+  mrp: number;
+  sellingPrice: number;
+  note?: string | null;
+  addToExisting?: boolean;
+}
+
+export interface UpdateBatchInput {
+  id: number;
+  medicineId: number;
+  batchNumber: string;
+  mfgDate?: string | null;
+  expDate: string;
+  costPrice: number;
+  mrp: number;
+  sellingPrice: number;
 }
 
 export interface AddBatchInput {

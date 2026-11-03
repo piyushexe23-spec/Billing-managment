@@ -19,6 +19,15 @@ interface StockAdjustmentModalProps {
   onSuccess: () => Promise<void>;
 }
 
+function formatUnit(qty: number, rawUnit?: string | null): string {
+  const base = (rawUnit || "Unit").trim();
+  const singular =
+    base.endsWith("s") && !base.toLowerCase().endsWith("gas")
+      ? base.slice(0, -1)
+      : base;
+  return Math.abs(qty) === 1 ? singular : `${singular}s`;
+}
+
 const COMMON_REASONS_ADD = [
   "Physical inventory recount correction (Found surplus)",
   "Unrecorded stock receipt",
@@ -149,6 +158,13 @@ export const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({
           </button>
         </div>
 
+        {/* Helper Note */}
+        <div className="px-6 pt-3 pb-0">
+          <div className="text-[11px] text-medical-slate-600 bg-medical-slate-50 p-2.5 rounded-xl border border-medical-slate-200">
+            <span className="font-bold text-medical-navy-950">Notice:</span> Use <strong>Adjust Stock</strong> for corrections and inventory write-offs. Use <strong>Add New Batch</strong> for new deliveries.
+          </div>
+        </div>
+
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs">
           {error && (
@@ -166,11 +182,11 @@ export const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({
             <select
               value={batchId}
               onChange={(e) => setBatchId(parseInt(e.target.value, 10))}
-              className="w-full h-9 rounded-lg border border-medical-slate-300 px-3 text-xs bg-white text-medical-slate-900 font-mono font-bold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-medical-navy-100 focus-visible:border-medical-navy-600"
+              className="w-full h-9 rounded-lg border border-medical-slate-300 px-3 text-xs bg-white text-medical-slate-900 font-sans font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-medical-navy-100 focus-visible:border-medical-navy-600"
             >
               {(medicine?.batches || []).map((b) => (
                 <option key={b.id} value={b.id}>
-                  Batch {b.batchNumber} (Exp: {b.expDate} • Available: {b.stockQty} {medicine?.unit}s)
+                  Batch {b.batchNumber} (Exp: {b.expDate} • Available: {b.stockQty} {formatUnit(b.stockQty, medicine?.unit)})
                 </option>
               ))}
             </select>
@@ -227,7 +243,7 @@ export const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({
                 if (error) setError(null);
               }}
               placeholder="e.g. 10"
-              className="font-mono text-sm font-bold h-10"
+              className="font-sans tabular-nums text-sm font-semibold h-10"
               autoFocus
             />
           </div>
@@ -262,13 +278,13 @@ export const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({
           </div>
 
           {/* Live Preview Card */}
-          <div className="p-3.5 rounded-xl bg-medical-slate-100/80 border border-medical-slate-200 flex items-center justify-between text-xs font-mono">
+          <div className="p-3.5 rounded-xl bg-medical-slate-100/80 border border-medical-slate-200 flex items-center justify-between text-xs font-sans tabular-nums">
             <div>
-              <span className="text-[10px] text-medical-slate-500 block uppercase font-sans font-bold">
+              <span className="text-[10px] text-medical-slate-500 block uppercase font-bold">
                 Current Stock
               </span>
               <span className="font-bold text-medical-slate-700">
-                {currentQty} {medicine?.unit}s
+                {currentQty} {formatUnit(currentQty, medicine?.unit)}
               </span>
             </div>
 
@@ -277,7 +293,7 @@ export const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({
             </span>
 
             <div>
-              <span className="text-[10px] text-medical-slate-500 block uppercase font-sans font-bold">
+              <span className="text-[10px] text-medical-slate-500 block uppercase font-bold">
                 Adjustment
               </span>
               <span
@@ -285,14 +301,14 @@ export const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({
                   adjustmentType === "ADD" ? "text-medical-green-700" : "text-red-600"
                 }`}
               >
-                {numQty} {medicine?.unit}s
+                {numQty} {formatUnit(numQty, medicine?.unit)}
               </span>
             </div>
 
             <span className="text-base text-medical-slate-400 font-bold">=</span>
 
             <div>
-              <span className="text-[10px] text-medical-slate-500 block uppercase font-sans font-bold">
+              <span className="text-[10px] text-medical-slate-500 block uppercase font-bold">
                 New Stock
               </span>
               <span
@@ -300,7 +316,7 @@ export const StockAdjustmentModal: React.FC<StockAdjustmentModalProps> = ({
                   calculatedNewQty < 0 ? "text-red-600" : "text-medical-navy-950"
                 }`}
               >
-                {calculatedNewQty} {medicine?.unit}s
+                {calculatedNewQty} {formatUnit(calculatedNewQty, medicine?.unit)}
               </span>
             </div>
           </div>

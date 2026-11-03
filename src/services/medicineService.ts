@@ -12,6 +12,9 @@ import {
   InventorySummaryMetrics,
   CreateMedicineInput,
   AddBatchInput,
+  AddNewBatchInput,
+  UpdateMedicineInput,
+  UpdateBatchInput,
   StockAdjustmentInput,
   BulkImportRow,
   BulkImportResult,
@@ -176,13 +179,14 @@ function saveLocalMovements(movs: StockMovement[]): void {
 // ----------------------------------------------------------------------
 export const medicineService = {
   /**
-   * Retrieves all active medicines with their active batches and computed metrics
+   * Retrieves all medicines with their active batches and computed metrics
+   * @param includeArchived If true, includes archived/soft-deleted medicines
    */
-  async getMedicines(): Promise<MedicineListItem[]> {
+  async getMedicines(includeArchived: boolean = false): Promise<MedicineListItem[]> {
     if (isTauri()) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const tauriMeds = await invoke<MedicineWithBatches[]>("get_medicines");
+        const tauriMeds = await invoke<MedicineWithBatches[]>("get_medicines", { includeArchived });
         if (tauriMeds && Array.isArray(tauriMeds)) {
           return tauriMeds.map((m) => this.transformToListItem(m));
         }
@@ -191,7 +195,7 @@ export const medicineService = {
       }
     }
 
-    const medicines = getLocalMedicines().filter((m) => m.isActive);
+    const medicines = getLocalMedicines().filter((m) => (includeArchived ? true : m.isActive));
     const batches = getLocalBatches().filter((b) => b.isActive);
 
     return medicines.map((m) => {
@@ -256,6 +260,7 @@ export const medicineService = {
       minSellingPrice: pricesSelling.length > 0 ? Math.min(...pricesSelling) : 0,
       maxSellingPrice: pricesSelling.length > 0 ? Math.max(...pricesSelling) : 0,
       activeBatchesCount: activeBatches.length,
+      isActive: m.isActive,
       batches: sortedBatches,
     };
   },
@@ -390,6 +395,242 @@ export const medicineService = {
     }
 
     return { ...newMedicine, batches: createdBatches };
+  },
+
+  /**
+   * Updates an existing medicine master record
+   */
+  async updateMedicine(input: UpdateMedicineInput): Promise<Medicine> {
+    if (!input.name.trim()) {
+      throw new Error("Medicine name is required.");
+    }
+    if (input.lowStockThreshold < 0) {
+      throw new Error("Low stock threshold cannot be negative.");
+    }
+
+    if (isTauri()) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("update_medicine", {
+          medicine: {
+            id: input.id,
+            name: input.name.trim(),
+            genericName: input.genericName?.trim() || null,
+            manufacturer: input.manufacturer?.trim() || null,
+            category: input.category?.trim() || null,
+            description: input.description?.trim() || null,
+            barcode: input.barcode?.trim() || null,
+            hsnCode: input.hsnCode?.trim() || null,
+            unit: input.unit.trim(),
+            lowStockThreshold: input.lowStockThreshold,
+          },
+        });
+        const med = await this.getMedicineById(input.id);
+        if (med) return med;
+      } catch (err) {
+        console.warn("Tauri update_medicine fallback:", err);
+      }
+    }
+
+    const medicines = getLocalMedicines();
+    const idx = medicines.findIndex((m) => m.id === input.id);
+    if (idx === -1) {
+      throw new Error("Medicine record not found.");
+    }
+
+    medicines[idx] = {
+      ...medicines[idx],
+      name: input.name.trim(),
+      genericName: input.genericName?.trim() || null,
+      manufacturer: input.manufacturer?.trim() || null,
+      category: input.category?.trim() || null,
+      description: input.description?.trim() || null,
+      barcode: input.barcode?.trim() || null,
+      hsnCode: input.hsnCode?.trim() || null,
+      unit: input.unit.trim(),
+      lowStockThreshold: input.lowStockThreshold,
+      updatedAt: new Date().toISOString(),
+    };
+    saveLocalMedicines(medicines);
+    return medicines[idx];
+  },
+
+  /**
+   * Adds a new batch to an existing medicine or increments quantity of an existing batch
+   * Supports duplicate batch detection and transactional stock movement recording
+   */
+  async addNewBatch(input: AddNewBatchInput): Promise<MedicineBatch> {
+    if (!input.batchNumber.trim()) {
+      throw new Error("Batch number is required.");
+    }
+    if (!input.expDate.trim()) {
+      throw new Error("Expiry date is required.");
+    }
+    if (input.quantityReceived <= 0) {
+      throw new Error("Quantity received must be a positive integer greater than zero.");
+    }
+    if (input.costPrice < 0 || input.mrp < 0 || input.sellingPrice < 0) {
+      throw new Error("Prices cannot be negative.");
+    }
+    if (input.mfgDate && input.expDate < input.mfgDate) {
+      throw new Error("Expiry date cannot be earlier than manufacturing date.");
+    }
+
+    if (isTauri()) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const batchId = await invoke<number>("add_medicine_batch", {
+          medicineId: input.medicineId,
+          batchNumber: input.batchNumber.trim().toUpperCase(),
+          mfgDate: input.mfgDate || null,
+          expDate: input.expDate,
+          costPrice: input.costPrice,
+          mrp: input.mrp,
+          sellingPrice: input.sellingPrice,
+          quantityReceived: input.quantityReceived,
+          note: input.note || null,
+          addToExisting: input.addToExisting || false,
+        });
+        const med = await this.getMedicineById(input.medicineId);
+        const batch = med?.batches.find((b) => b.id === batchId);
+        if (batch) return batch;
+      } catch (err: any) {
+        if (err && String(err).includes("BATCH_ALREADY_EXISTS")) {
+          throw new Error(`BATCH_ALREADY_EXISTS: Batch '${input.batchNumber}' already exists for this medicine.`);
+        }
+        console.warn("Tauri add_medicine_batch fallback:", err);
+      }
+    }
+
+    const batches = getLocalBatches();
+    const existing = batches.find(
+      (b) =>
+        b.medicineId === input.medicineId &&
+        b.batchNumber.toLowerCase() === input.batchNumber.trim().toLowerCase()
+    );
+
+    if (existing && !input.addToExisting) {
+      throw new Error(`BATCH_ALREADY_EXISTS: Batch '${input.batchNumber}' already exists for this medicine.`);
+    }
+
+    const medicines = getLocalMedicines();
+    const med = medicines.find((m) => m.id === input.medicineId);
+    const movements = getLocalMovements();
+    const movementId = movements.length > 0 ? Math.max(...movements.map((m) => m.id)) + 1 : 1;
+
+    if (existing && input.addToExisting) {
+      const prevQty = existing.stockQty;
+      const newQty = prevQty + input.quantityReceived;
+      existing.stockQty = newQty;
+      existing.costPrice = input.costPrice;
+      existing.mrp = input.mrp;
+      existing.sellingPrice = input.sellingPrice;
+      existing.expDate = input.expDate;
+      if (input.mfgDate) existing.mfgDate = input.mfgDate;
+      existing.updatedAt = new Date().toISOString();
+      saveLocalBatches(batches);
+
+      movements.unshift({
+        id: movementId,
+        medicineId: input.medicineId,
+        batchId: existing.id,
+        batchNumber: existing.batchNumber,
+        medicineName: med?.name || "Unknown Medicine",
+        movementType: "PURCHASE",
+        quantity: input.quantityReceived,
+        previousQty: prevQty,
+        newQty,
+        reason: input.note?.trim() || "Purchase / New Batch received",
+        createdAt: new Date().toISOString(),
+      });
+      saveLocalMovements(movements);
+      return existing;
+    } else {
+      const newBatchId = batches.length > 0 ? Math.max(...batches.map((b) => b.id)) + 1 : 1;
+      const newBatch: MedicineBatch = {
+        id: newBatchId,
+        medicineId: input.medicineId,
+        batchNumber: input.batchNumber.trim().toUpperCase(),
+        mfgDate: input.mfgDate || null,
+        expDate: input.expDate,
+        costPrice: input.costPrice,
+        mrp: input.mrp,
+        sellingPrice: input.sellingPrice,
+        stockQty: input.quantityReceived,
+        isActive: true,
+        createdAt: new Date().toISOString(),
+      };
+      batches.push(newBatch);
+      saveLocalBatches(batches);
+
+      movements.unshift({
+        id: movementId,
+        medicineId: input.medicineId,
+        batchId: newBatchId,
+        batchNumber: newBatch.batchNumber,
+        medicineName: med?.name || "Unknown Medicine",
+        movementType: "PURCHASE",
+        quantity: input.quantityReceived,
+        previousQty: 0,
+        newQty: input.quantityReceived,
+        reason: input.note?.trim() || "Purchase / New Batch received",
+        createdAt: new Date().toISOString(),
+      });
+      saveLocalMovements(movements);
+      return newBatch;
+    }
+  },
+
+  /**
+   * Updates batch details (batch number, dates, prices)
+   */
+  async updateBatch(input: UpdateBatchInput): Promise<void> {
+    if (!input.batchNumber.trim()) {
+      throw new Error("Batch number is required.");
+    }
+    if (!input.expDate.trim()) {
+      throw new Error("Expiry date is required.");
+    }
+    if (input.costPrice < 0 || input.mrp < 0 || input.sellingPrice < 0) {
+      throw new Error("Prices cannot be negative.");
+    }
+    if (input.mfgDate && input.expDate < input.mfgDate) {
+      throw new Error("Expiry date cannot be earlier than manufacturing date.");
+    }
+
+    if (isTauri()) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("update_batch", {
+          batchId: input.id,
+          batchNumber: input.batchNumber.trim().toUpperCase(),
+          mfgDate: input.mfgDate || null,
+          expDate: input.expDate,
+          costPrice: input.costPrice,
+          mrp: input.mrp,
+          sellingPrice: input.sellingPrice,
+        });
+        return;
+      } catch (err) {
+        console.warn("Tauri update_batch fallback:", err);
+      }
+    }
+
+    const batches = getLocalBatches();
+    const idx = batches.findIndex((b) => b.id === input.id);
+    if (idx !== -1) {
+      batches[idx] = {
+        ...batches[idx],
+        batchNumber: input.batchNumber.trim().toUpperCase(),
+        mfgDate: input.mfgDate || null,
+        expDate: input.expDate,
+        costPrice: input.costPrice,
+        mrp: input.mrp,
+        sellingPrice: input.sellingPrice,
+        updatedAt: new Date().toISOString(),
+      };
+      saveLocalBatches(batches);
+    }
   },
 
   /**
@@ -560,6 +801,90 @@ export const medicineService = {
       med.updatedAt = new Date().toISOString();
       saveLocalMedicines(medicines);
     }
+  },
+
+  /**
+   * Restores an archived medicine record to active status
+   */
+  async restoreMedicine(medicineId: number): Promise<void> {
+    if (isTauri()) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("restore_medicine", { medicineId });
+        return;
+      } catch (err) {
+        console.warn("Tauri restore_medicine fallback:", err);
+      }
+    }
+
+    const medicines = getLocalMedicines();
+    const med = medicines.find((m) => m.id === medicineId);
+    if (med) {
+      med.isActive = true;
+      med.updatedAt = new Date().toISOString();
+      saveLocalMedicines(medicines);
+    }
+  },
+
+  /**
+   * Evaluates if a medicine can be permanently deleted
+   * Rule: Permanent Delete is allowed only if the medicine has no stock movements, batches with stock, or transactions.
+   */
+  async canDeleteMedicine(
+    medicineId: number
+  ): Promise<{ canDelete: boolean; reason: string }> {
+    if (isTauri()) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const [canDelete, reason] = await invoke<[boolean, string]>("can_delete_medicine", {
+          medicineId,
+        });
+        return { canDelete, reason };
+      } catch (err) {
+        console.warn("Tauri can_delete_medicine fallback:", err);
+      }
+    }
+
+    const movements = getLocalMovements().filter((m) => m.medicineId === medicineId);
+    const batches = getLocalBatches().filter((b) => b.medicineId === medicineId);
+    const totalStock = batches.reduce((acc, b) => acc + (b.stockQty || 0), 0);
+
+    if (movements.length > 0 || totalStock > 0) {
+      return {
+        canDelete: false,
+        reason: `This medicine has recorded history (${totalStock} stock units across batches, ${movements.length} audit movement records). To preserve regulatory and audit history, it cannot be permanently deleted. Please use Archive instead.`,
+      };
+    }
+
+    return {
+      canDelete: true,
+      reason: "Medicine has no stock or audit history and can be safely deleted.",
+    };
+  },
+
+  /**
+   * Permanently deletes a medicine with no historical movements or stock
+   */
+  async deleteMedicine(medicineId: number): Promise<void> {
+    const check = await this.canDeleteMedicine(medicineId);
+    if (!check.canDelete) {
+      throw new Error(check.reason);
+    }
+
+    if (isTauri()) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("delete_medicine", { medicineId });
+        return;
+      } catch (err) {
+        console.warn("Tauri delete_medicine fallback:", err);
+      }
+    }
+
+    const medicines = getLocalMedicines().filter((m) => m.id !== medicineId);
+    saveLocalMedicines(medicines);
+    const batches = getLocalBatches().filter((b) => b.medicineId !== medicineId);
+    saveLocalBatches(batches);
   },
 
   /**

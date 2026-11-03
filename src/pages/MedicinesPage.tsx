@@ -15,6 +15,9 @@ import { MedicineDetailModal } from "@/components/medicines/MedicineDetailModal"
 import { StockAdjustmentModal } from "@/components/medicines/StockAdjustmentModal";
 import { BulkImportModal } from "@/components/medicines/BulkImportModal";
 import { ExportModal } from "@/components/medicines/ExportModal";
+import { AddNewBatchModal } from "@/components/medicines/AddNewBatchModal";
+import { EditMedicineModal } from "@/components/medicines/EditMedicineModal";
+import { ArchiveDeleteModal } from "@/components/medicines/ArchiveDeleteModal";
 import {
   Pill,
   Search,
@@ -33,6 +36,9 @@ import {
   Loader2,
   X,
   Package,
+  Pencil,
+  PackagePlus,
+  Archive,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -45,6 +51,7 @@ export const MedicinesPage: React.FC = () => {
 
   // Filters State
   const [search, setSearch] = useState<string>("");
+  const [showArchived, setShowArchived] = useState<boolean>(false);
   const [stockStatusFilter, setStockStatusFilter] = useState<MedicineFilterOptions["stockStatus"]>("ALL");
   const [expiryStatusFilter, setExpiryStatusFilter] = useState<MedicineFilterOptions["expiryStatus"]>("ALL");
   const [manufacturerFilter, setManufacturerFilter] = useState<string>("ALL");
@@ -62,14 +69,17 @@ export const MedicinesPage: React.FC = () => {
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [viewMedicineId, setViewMedicineId] = useState<number | null>(null);
   const [stockAdjustData, setStockAdjustData] = useState<StockAdjustmentInput | null>(null);
+  const [editMedicineId, setEditMedicineId] = useState<number | null>(null);
+  const [addBatchMedicineId, setAddBatchMedicineId] = useState<number | null>(null);
+  const [archiveDeleteMedicine, setArchiveDeleteMedicine] = useState<{ id: number; name: string } | null>(null);
 
   // Load Inventory Data
-  const loadData = async () => {
+  const loadData = async (archived = showArchived) => {
     try {
       setIsLoading(true);
       setErrorMessage(null);
       const [medsList, summaryMetrics] = await Promise.all([
-        medicineService.getMedicines(),
+        medicineService.getMedicines(archived),
         medicineService.getInventorySummary(),
       ]);
       setMedicines(medsList);
@@ -83,8 +93,8 @@ export const MedicinesPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(showArchived);
+  }, [showArchived]);
 
   // Dynamic filter options based on active medicines
   const manufacturers = useMemo(() => {
@@ -197,6 +207,7 @@ export const MedicinesPage: React.FC = () => {
 
   const handleClearFilters = () => {
     setSearch("");
+    setShowArchived(false);
     setStockStatusFilter("ALL");
     setExpiryStatusFilter("ALL");
     setManufacturerFilter("ALL");
@@ -206,6 +217,7 @@ export const MedicinesPage: React.FC = () => {
 
   const hasActiveFilters =
     search.trim() !== "" ||
+    showArchived ||
     stockStatusFilter !== "ALL" ||
     expiryStatusFilter !== "ALL" ||
     manufacturerFilter !== "ALL" ||
@@ -443,6 +455,20 @@ export const MedicinesPage: React.FC = () => {
 
           {/* Result Count and Clear Filters */}
           <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+            {/* Show Archived Toggle */}
+            <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-medical-slate-700 hover:text-medical-navy-950 cursor-pointer select-none bg-medical-slate-50 border border-medical-slate-200/90 rounded-xl px-2.5 py-1.5 transition-colors">
+              <input
+                type="checkbox"
+                checked={showArchived}
+                onChange={(e) => {
+                  setShowArchived(e.target.checked);
+                  setCurrentPage(1);
+                }}
+                className="w-3.5 h-3.5 rounded border-medical-slate-300 text-medical-navy-900 focus:ring-medical-navy-500 cursor-pointer"
+              />
+              <span>Show Archived</span>
+            </label>
+
             <span className="text-xs text-medical-slate-500 font-medium tabular-nums whitespace-nowrap">
               Showing <strong className="text-medical-navy-950">{filteredMedicines.length}</strong> of {medicines.length} medicines
             </span>
@@ -749,13 +775,31 @@ export const MedicinesPage: React.FC = () => {
                 </tr>
               ) : (
                 paginatedMedicines.map((m) => (
-                  <tr key={m.id} className="hover:bg-medical-slate-50/80 transition-colors group">
+                  <tr
+                    key={m.id}
+                    className={`transition-colors group ${
+                      !m.isActive
+                        ? "bg-medical-slate-50/70 opacity-75 hover:bg-medical-slate-100/70"
+                        : "hover:bg-medical-slate-50/80"
+                    }`}
+                  >
                     {/* Name & Generic */}
                     <td className="py-3 px-4">
                       <div className="space-y-0.5">
-                        <span className="font-bold text-medical-navy-950 block text-xs group-hover:text-medical-navy-800">
-                          {m.name}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`font-bold block text-xs group-hover:text-medical-navy-800 ${
+                              !m.isActive ? "text-medical-slate-500 line-through decoration-medical-slate-400" : "text-medical-navy-950"
+                            }`}
+                          >
+                            {m.name}
+                          </span>
+                          {!m.isActive && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-medical-slate-200 text-medical-slate-700">
+                              Archived
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5 text-[10px] text-medical-slate-500">
                           {m.genericName && <span className="truncate max-w-[200px]">{m.genericName}</span>}
                           {m.category && (
@@ -837,35 +881,65 @@ export const MedicinesPage: React.FC = () => {
 
                     {/* Stock Status */}
                     <td className="py-3 px-3 whitespace-nowrap">
-                      {m.stockStatus === "OUT_OF_STOCK" && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 border border-red-200">
-                          Out of Stock
+                      {!m.isActive ? (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-medical-slate-200 text-medical-slate-700 border border-medical-slate-300">
+                          Archived
                         </span>
-                      )}
-                      {m.stockStatus === "LOW_STOCK" && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
-                          Low Stock
-                        </span>
-                      )}
-                      {m.stockStatus === "IN_STOCK" && (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-medical-green-100 text-medical-green-800 border border-medical-green-200">
-                          In Stock
-                        </span>
+                      ) : (
+                        <>
+                          {m.stockStatus === "OUT_OF_STOCK" && (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-red-100 text-red-700 border border-red-200">
+                              Out of Stock
+                            </span>
+                          )}
+                          {m.stockStatus === "LOW_STOCK" && (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                              Low Stock
+                            </span>
+                          )}
+                          {m.stockStatus === "IN_STOCK" && (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-medical-green-100 text-medical-green-800 border border-medical-green-200">
+                              In Stock
+                            </span>
+                          )}
+                        </>
                       )}
                     </td>
 
                     {/* Actions */}
                     <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <div className="flex items-center justify-end gap-1.5">
+                      <div className="flex items-center justify-end gap-1">
+                        {/* 1. View Details */}
                         <button
                           type="button"
                           onClick={() => setViewMedicineId(m.id)}
-                          className="h-8 w-8 rounded-lg border border-medical-slate-300 text-medical-slate-700 hover:text-medical-navy-900 hover:bg-medical-slate-100 inline-flex items-center justify-center cursor-pointer transition-colors"
+                          className="h-8 w-8 rounded-lg border border-medical-slate-200 text-medical-slate-600 hover:text-medical-navy-950 hover:bg-medical-slate-100 hover:border-medical-slate-300 inline-flex items-center justify-center cursor-pointer transition-colors shadow-2xs"
                           title="View Details & Batches"
                         >
                           <Eye className="w-3.5 h-3.5" />
                         </button>
 
+                        {/* 2. Edit Master Info */}
+                        <button
+                          type="button"
+                          onClick={() => setEditMedicineId(m.id)}
+                          className="h-8 w-8 rounded-lg border border-medical-slate-200 text-medical-slate-600 hover:text-blue-700 hover:bg-blue-50 hover:border-blue-200 inline-flex items-center justify-center cursor-pointer transition-colors shadow-2xs"
+                          title="Edit Medicine Info"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* 3. Add New Batch */}
+                        <button
+                          type="button"
+                          onClick={() => setAddBatchMedicineId(m.id)}
+                          className="h-8 w-8 rounded-lg border border-medical-slate-200 text-medical-slate-600 hover:text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200 inline-flex items-center justify-center cursor-pointer transition-colors shadow-2xs"
+                          title="Add New Batch"
+                        >
+                          <PackagePlus className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* 4. Adjust Stock */}
                         <button
                           type="button"
                           onClick={() => {
@@ -881,11 +955,37 @@ export const MedicinesPage: React.FC = () => {
                               });
                             }
                           }}
-                          className="h-8 w-8 rounded-lg border border-medical-slate-300 text-medical-slate-700 hover:text-medical-navy-900 hover:bg-medical-slate-100 inline-flex items-center justify-center cursor-pointer transition-colors"
+                          className="h-8 w-8 rounded-lg border border-medical-slate-200 text-medical-slate-600 hover:text-amber-700 hover:bg-amber-50 hover:border-amber-200 inline-flex items-center justify-center cursor-pointer transition-colors shadow-2xs"
                           title="Adjust Stock Quantity"
                         >
                           <Sliders className="w-3.5 h-3.5" />
                         </button>
+
+                        {/* 5. Archive or Restore */}
+                        {m.isActive ? (
+                          <button
+                            type="button"
+                            onClick={() => setArchiveDeleteMedicine({ id: m.id, name: m.name })}
+                            className="h-8 w-8 rounded-lg border border-medical-slate-200 text-medical-slate-500 hover:text-red-700 hover:bg-red-50 hover:border-red-200 inline-flex items-center justify-center cursor-pointer transition-colors shadow-2xs"
+                            title="Archive or Delete Medicine"
+                          >
+                            <Archive className="w-3.5 h-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (window.confirm(`Restore "${m.name}" to active inventory?`)) {
+                                await medicineService.restoreMedicine(m.id);
+                                await loadData();
+                              }
+                            }}
+                            className="h-8 w-8 rounded-lg border border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-400 inline-flex items-center justify-center cursor-pointer transition-colors shadow-2xs"
+                            title="Restore Medicine to Active"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -979,6 +1079,31 @@ export const MedicinesPage: React.FC = () => {
         onClose={() => setIsExportModalOpen(false)}
         allItems={medicines}
         filteredItems={filteredMedicines}
+      />
+
+      {/* Edit Medicine Master Modal */}
+      <EditMedicineModal
+        isOpen={editMedicineId !== null}
+        onClose={() => setEditMedicineId(null)}
+        medicineId={editMedicineId}
+        onSuccess={loadData}
+      />
+
+      {/* Add New Batch Modal */}
+      <AddNewBatchModal
+        isOpen={addBatchMedicineId !== null}
+        onClose={() => setAddBatchMedicineId(null)}
+        medicineId={addBatchMedicineId}
+        onSuccess={loadData}
+      />
+
+      {/* Archive / Delete Modal */}
+      <ArchiveDeleteModal
+        isOpen={archiveDeleteMedicine !== null}
+        onClose={() => setArchiveDeleteMedicine(null)}
+        medicineId={archiveDeleteMedicine?.id || null}
+        medicineName={archiveDeleteMedicine?.name}
+        onSuccess={loadData}
       />
     </div>
   );

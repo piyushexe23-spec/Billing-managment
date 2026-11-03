@@ -1,4 +1,4 @@
-use rusqlite::{Connection, Result, params};
+use rusqlite::{Connection, Result, params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -367,6 +367,21 @@ pub struct MedicineBatch {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct MedicineMasterInput {
+    pub id: i64,
+    pub name: String,
+    pub generic_name: Option<String>,
+    pub manufacturer: Option<String>,
+    pub category: Option<String>,
+    pub description: Option<String>,
+    pub barcode: Option<String>,
+    pub hsn_code: Option<String>,
+    pub unit: String,
+    pub low_stock_threshold: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct MedicineWithBatches {
     pub id: i64,
     pub name: String,
@@ -473,14 +488,19 @@ pub fn cleanup_demo_medicines(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Fetches all active medicines along with their active batches
-pub fn fetch_medicines_with_batches(conn: &Connection) -> Result<Vec<MedicineWithBatches>> {
-    let mut stmt = conn.prepare(
+/// Fetches medicines along with their active batches (optionally including archived)
+pub fn fetch_medicines_with_batches(conn: &Connection, include_archived: bool) -> Result<Vec<MedicineWithBatches>> {
+    let sql = if include_archived {
+        r#"SELECT id, name, generic_name, manufacturer, category, description, barcode, hsn_code, unit, low_stock_threshold, is_active, created_at, updated_at
+           FROM medicines
+           ORDER BY name ASC"#
+    } else {
         r#"SELECT id, name, generic_name, manufacturer, category, description, barcode, hsn_code, unit, low_stock_threshold, is_active, created_at, updated_at
            FROM medicines
            WHERE is_active = 1
-           ORDER BY name ASC"#,
-    )?;
+           ORDER BY name ASC"#
+    };
+    let mut stmt = conn.prepare(sql)?;
 
     let mut batch_stmt = conn.prepare(
         r#"SELECT id, medicine_id, batch_number, mfg_date, exp_date, cost_price, mrp, selling_price, stock_qty, is_active, created_at, updated_at
@@ -711,6 +731,189 @@ pub fn adjust_batch_stock(
     Ok(())
 }
 
+/// Updates an existing medicine master info
+pub fn update_medicine(conn: &Connection, input: &MedicineMasterInput) -> Result<()> {
+    if input.name.trim().is_empty() {
+        return Err(rusqlite::Error::UserFunctionError("Medicine name is required".into()));
+    }
+    if input.low_stock_threshold < 0 {
+        return Err(rusqlite::Error::UserFunctionError("Low stock threshold cannot be negative".into()));
+    }
+    conn.execute(
+        r#"UPDATE medicines SET
+            name = ?1,
+            generic_name = ?2,
+            manufacturer = ?3,
+            category = ?4,
+            description = ?5,
+            barcode = ?6,
+            hsn_code = ?7,
+            unit = ?8,
+            low_stock_threshold = ?9,
+            updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?10"#,
+        params![
+            input.name.trim(),
+            input.generic_name.as_deref().map(|s| s.trim()),
+            input.manufacturer.as_deref().map(|s| s.trim()),
+            input.category.as_deref().map(|s| s.trim()),
+            input.description.as_deref().map(|s| s.trim()),
+            input.barcode.as_deref().map(|s| s.trim()),
+            input.hsn_code.as_deref().map(|s| s.trim()),
+            input.unit.trim(),
+            input.low_stock_threshold,
+            input.id
+        ],
+    )?;
+    Ok(())
+}
+
+/// Adds a new batch to an existing medicine or increments existing batch stock in a transaction
+pub fn add_or_increment_batch(
+    conn: &mut Connection,
+    medicine_id: i64,
+    batch_number: &str,
+    mfg_date: Option<&str>,
+    exp_date: &str,
+    cost_price: f64,
+    mrp: f64,
+    selling_price: f64,
+    quantity_received: i64,
+    note: Option<&str>,
+    add_to_existing: bool,
+) -> Result<i64> {
+    if batch_number.trim().is_empty() {
+        return Err(rusqlite::Error::UserFunctionError("Batch number is required".into()));
+    }
+    if exp_date.trim().is_empty() {
+        return Err(rusqlite::Error::UserFunctionError("Expiry date is required".into()));
+    }
+    if quantity_received <= 0 {
+        return Err(rusqlite::Error::UserFunctionError("Quantity received must be greater than zero".into()));
+    }
+    if cost_price < 0.0 || mrp < 0.0 || selling_price < 0.0 {
+        return Err(rusqlite::Error::UserFunctionError("Prices cannot be negative".into()));
+    }
+    if let Some(mfg) = mfg_date {
+        if !mfg.trim().is_empty() && exp_date.trim() < mfg.trim() {
+            return Err(rusqlite::Error::UserFunctionError("Expiry date cannot be earlier than manufacturing date".into()));
+        }
+    }
+
+    let tx = conn.transaction()?;
+
+    // Check if batch number already exists for this medicine (case-insensitive)
+    let existing_batch: Option<(i64, i64)> = tx.query_row(
+        "SELECT id, stock_qty FROM medicine_batches WHERE medicine_id = ?1 AND LOWER(TRIM(batch_number)) = LOWER(TRIM(?2))",
+        params![medicine_id, batch_number.trim()],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).optional()?;
+
+    let (batch_id, prev_qty, new_qty) = match existing_batch {
+        Some((id, current_stock)) => {
+            if !add_to_existing {
+                return Err(rusqlite::Error::UserFunctionError(
+                    format!("BATCH_ALREADY_EXISTS:Batch '{}' already exists for this medicine.", batch_number.trim())
+                ));
+            }
+            let new_stock = current_stock + quantity_received;
+            tx.execute(
+                r#"UPDATE medicine_batches SET
+                    stock_qty = ?1,
+                    cost_price = ?2,
+                    mrp = ?3,
+                    selling_price = ?4,
+                    exp_date = ?5,
+                    mfg_date = COALESCE(?6, mfg_date),
+                    updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ?7"#,
+                params![new_stock, cost_price, mrp, selling_price, exp_date.trim(), mfg_date.map(|s| s.trim()), id],
+            )?;
+            (id, current_stock, new_stock)
+        }
+        None => {
+            tx.execute(
+                r#"INSERT INTO medicine_batches (medicine_id, batch_number, mfg_date, exp_date, cost_price, mrp, selling_price, stock_qty, is_active, created_at, updated_at)
+                   VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"#,
+                params![
+                    medicine_id,
+                    batch_number.trim().to_uppercase(),
+                    mfg_date.map(|s| s.trim()),
+                    exp_date.trim(),
+                    cost_price,
+                    mrp,
+                    selling_price,
+                    quantity_received
+                ],
+            )?;
+            let id = tx.last_insert_rowid();
+            (id, 0, quantity_received)
+        }
+    };
+
+    let reason_str = match note {
+        Some(n) if !n.trim().is_empty() => n.trim().to_string(),
+        _ => "Purchase / New Batch".to_string(),
+    };
+
+    tx.execute(
+        r#"INSERT INTO stock_movements (medicine_id, batch_id, movement_type, quantity, previous_qty, new_qty, reason, created_at)
+           VALUES (?1, ?2, 'PURCHASE', ?3, ?4, ?5, ?6, CURRENT_TIMESTAMP)"#,
+        params![medicine_id, batch_id, quantity_received, prev_qty, new_qty, reason_str],
+    )?;
+
+    tx.commit()?;
+    Ok(batch_id)
+}
+
+/// Updates details of a specific batch (number, dates, prices)
+pub fn update_batch_details(
+    conn: &Connection,
+    batch_id: i64,
+    batch_number: &str,
+    mfg_date: Option<&str>,
+    exp_date: &str,
+    cost_price: f64,
+    mrp: f64,
+    selling_price: f64,
+) -> Result<()> {
+    if batch_number.trim().is_empty() {
+        return Err(rusqlite::Error::UserFunctionError("Batch number is required".into()));
+    }
+    if exp_date.trim().is_empty() {
+        return Err(rusqlite::Error::UserFunctionError("Expiry date is required".into()));
+    }
+    if cost_price < 0.0 || mrp < 0.0 || selling_price < 0.0 {
+        return Err(rusqlite::Error::UserFunctionError("Prices cannot be negative".into()));
+    }
+    if let Some(mfg) = mfg_date {
+        if !mfg.trim().is_empty() && exp_date.trim() < mfg.trim() {
+            return Err(rusqlite::Error::UserFunctionError("Expiry date cannot be earlier than manufacturing date".into()));
+        }
+    }
+    conn.execute(
+        r#"UPDATE medicine_batches SET
+            batch_number = ?1,
+            mfg_date = ?2,
+            exp_date = ?3,
+            cost_price = ?4,
+            mrp = ?5,
+            selling_price = ?6,
+            updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?7"#,
+        params![
+            batch_number.trim().to_uppercase(),
+            mfg_date.map(|s| s.trim()),
+            exp_date.trim(),
+            cost_price,
+            mrp,
+            selling_price,
+            batch_id
+        ],
+    )?;
+    Ok(())
+}
+
 /// Soft deletes / archives a medicine so it cannot be selected in future billing
 pub fn archive_medicine(conn: &Connection, medicine_id: i64) -> Result<()> {
     conn.execute(
@@ -718,6 +921,54 @@ pub fn archive_medicine(conn: &Connection, medicine_id: i64) -> Result<()> {
         params![medicine_id],
     )?;
     Ok(())
+}
+
+/// Restores an archived medicine record
+pub fn restore_medicine(conn: &Connection, medicine_id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE medicines SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?1",
+        params![medicine_id],
+    )?;
+    Ok(())
+}
+
+/// Checks if a medicine can be permanently deleted
+pub fn check_can_delete_medicine(conn: &Connection, medicine_id: i64) -> Result<(bool, String)> {
+    let movement_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM stock_movements WHERE medicine_id = ?1",
+        params![medicine_id],
+        |row| row.get(0),
+    )?;
+
+    let total_stock: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(stock_qty), 0) FROM medicine_batches WHERE medicine_id = ?1",
+        params![medicine_id],
+        |row| row.get(0),
+    )?;
+
+    if movement_count > 0 || total_stock > 0 {
+        let reason = format!(
+            "This medicine has recorded history ({} stock units across batches, {} audit movement records). To preserve regulatory and accounting history, it cannot be permanently deleted. Please use Archive instead.",
+            total_stock, movement_count
+        );
+        Ok((false, reason))
+    } else {
+        Ok((true, "Medicine has no stock or audit history and can be safely deleted.".into()))
+    }
+}
+
+/// Permanently deletes an empty medicine that has zero movements and zero stock
+pub fn delete_medicine_permanently(conn: &mut Connection, medicine_id: i64) -> Result<()> {
+    let (can_delete, reason) = check_can_delete_medicine(conn, medicine_id)?;
+    if !can_delete {
+        return Err(rusqlite::Error::UserFunctionError(reason));
+    }
+    let tx = conn.transaction()?;
+    tx.execute("DELETE FROM medicine_batches WHERE medicine_id = ?1", params![medicine_id])?;
+    tx.execute("DELETE FROM medicines WHERE id = ?1", params![medicine_id])?;
+    tx.commit()?;
+    Ok(())
+}
 }
 
 /// Retrieves stock movements for a specific medicine
