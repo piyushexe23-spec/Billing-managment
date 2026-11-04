@@ -596,6 +596,58 @@ pub struct PaginatedBillsResult {
     pub summary: BillHistorySummary,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomerFilterInput {
+    pub from_date: Option<String>,
+    pub to_date: Option<String>,
+    pub search: Option<String>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomerListItem {
+    pub mobile: String,
+    pub display_name: String,
+    pub other_names: Vec<String>,
+    pub bills_count: i64,
+    pub total_spent: f64,
+    pub last_visit: String,
+    pub first_visit: String,
+    pub all_time_bills_count: i64,
+    pub all_time_total_spent: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomersSummary {
+    pub total_customers: i64,
+    pub total_bills: i64,
+    pub total_sales: f64,
+    pub repeat_customers: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PaginatedCustomersResult {
+    pub customers: Vec<CustomerListItem>,
+    pub total_count: i64,
+    pub page: i64,
+    pub page_size: i64,
+    pub summary: CustomersSummary,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomerDetailResult {
+    pub customer: CustomerListItem,
+    pub bills: Vec<BillRecord>,
+}
+
 /// Safely migrates existing medicine tables to add relational columns if missing
 pub fn migrate_medicine_tables(conn: &Connection) -> Result<()> {
     let mut stmt = conn.prepare("PRAGMA table_info(medicines)")?;
@@ -693,6 +745,7 @@ pub fn migrate_billing_tables(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_bills_date_sub ON bills(substr(bill_date, 1, 10));
         CREATE INDEX IF NOT EXISTS idx_bills_payment_mode ON bills(payment_mode);
         CREATE INDEX IF NOT EXISTS idx_bills_created_at ON bills(created_at);
+        CREATE INDEX IF NOT EXISTS idx_bills_customer_mobile ON bills(customer_mobile);
         "#
     )?;
 
@@ -2237,6 +2290,421 @@ pub fn fetch_bill_by_id(conn: &Connection, bill_id: i64) -> Result<Option<BillRe
     } else {
         Ok(None)
     }
+}
+
+/// Fetches paginated customers derived from saved bills, along with accurate summary KPIs
+pub fn fetch_customers_paginated(conn: &Connection, filter: &CustomerFilterInput) -> Result<PaginatedCustomersResult> {
+    let mut range_conditions = Vec::new();
+    let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(from) = &filter.from_date {
+        let trimmed = from.trim();
+        if !trimmed.is_empty() {
+            params_vec.push(Box::new(trimmed.to_string()));
+            range_conditions.push(format!("substr(nb.bill_date, 1, 10) >= ?{}", params_vec.len()));
+        }
+    }
+
+    if let Some(to) = &filter.to_date {
+        let trimmed = to.trim();
+        if !trimmed.is_empty() {
+            params_vec.push(Box::new(trimmed.to_string()));
+            range_conditions.push(format!("substr(nb.bill_date, 1, 10) <= ?{}", params_vec.len()));
+        }
+    }
+
+    let range_expr = if range_conditions.is_empty() {
+        "1 = 1".to_string()
+    } else {
+        range_conditions.join(" AND ")
+    };
+
+    let mut search_where = String::new();
+    if let Some(search) = &filter.search {
+        let trimmed = search.trim();
+        if !trimmed.is_empty() {
+            let pat = format!("%{}%", trimmed);
+            params_vec.push(Box::new(pat.clone()));
+            let p1 = params_vec.len();
+            params_vec.push(Box::new(pat));
+            let p2 = params_vec.len();
+            search_where = format!(
+                "WHERE nb.norm_mobile IN (SELECT DISTINCT nb_s.norm_mobile FROM norm_bills nb_s WHERE nb_s.customer_name LIKE ?{} OR nb_s.norm_mobile LIKE ?{})",
+                p1, p2
+            );
+        }
+    }
+
+    let cte_sql = format!(
+        r#"WITH norm_bills AS (
+            SELECT 
+                b.id,
+                b.bill_number,
+                b.customer_name,
+                CASE 
+                    WHEN TRIM(b.customer_mobile) = '' THEN 'No mobile' 
+                    WHEN LENGTH(TRIM(b.customer_mobile)) >= 10 THEN SUBSTR(REPLACE(REPLACE(TRIM(b.customer_mobile), '+91', ''), ' ', ''), -10) 
+                    ELSE TRIM(b.customer_mobile) 
+                END AS norm_mobile,
+                b.bill_date,
+                b.grand_total
+            FROM bills b
+        ),
+        customer_grouped AS (
+            SELECT 
+                nb.norm_mobile,
+                COUNT(CASE WHEN {} THEN 1 END) AS range_bills_count,
+                COALESCE(SUM(CASE WHEN {} THEN nb.grand_total ELSE 0.0 END), 0.0) AS range_total_spent,
+                MAX(CASE WHEN {} THEN nb.bill_date END) AS range_last_visit,
+                MIN(nb.bill_date) AS first_visit,
+                MAX(nb.bill_date) AS all_time_last_visit,
+                COUNT(*) AS all_time_bills_count,
+                COALESCE(SUM(nb.grand_total), 0.0) AS all_time_total_spent,
+                (
+                    SELECT nb_latest.customer_name 
+                    FROM norm_bills nb_latest 
+                    WHERE nb_latest.norm_mobile = nb.norm_mobile
+                    ORDER BY nb_latest.id DESC LIMIT 1
+                ) AS latest_name,
+                GROUP_CONCAT(DISTINCT nb.customer_name) AS all_names_str
+            FROM norm_bills nb
+            {}
+            GROUP BY nb.norm_mobile
+            HAVING range_bills_count > 0
+        )"#,
+        range_expr, range_expr, range_expr, search_where
+    );
+
+    // Summary calculation
+    let summary_sql = format!(
+        r#"{}
+        SELECT 
+            COUNT(*),
+            COALESCE(SUM(range_bills_count), 0),
+            COALESCE(SUM(range_total_spent), 0.0),
+            COALESCE(SUM(CASE WHEN range_bills_count >= 2 THEN 1 ELSE 0 END), 0)
+        FROM customer_grouped"#,
+        cte_sql
+    );
+
+    let summary_params: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+    let summary: CustomersSummary = conn.query_row(&summary_sql, &summary_params[..], |row| {
+        Ok(CustomersSummary {
+            total_customers: row.get(0)?,
+            total_bills: row.get(1)?,
+            total_sales: (row.get::<_, f64>(2)? * 100.0).round() / 100.0,
+            repeat_customers: row.get(3)?,
+        })
+    })?;
+
+    let total_count = summary.total_customers;
+
+    // Sorting
+    let sort_col = match filter.sort_by.as_deref().unwrap_or("last_visit") {
+        "name" => "latest_name",
+        "bills" => "range_bills_count",
+        "total_spent" => "range_total_spent",
+        _ => "range_last_visit",
+    };
+
+    let sort_dir = match filter.sort_order.as_deref().unwrap_or("desc").to_lowercase().as_str() {
+        "asc" => "ASC",
+        _ => "DESC",
+    };
+
+    let order_by = format!("ORDER BY {} {}, norm_mobile ASC", sort_col, sort_dir);
+
+    // Pagination
+    let page = filter.page.unwrap_or(1).max(1);
+    let page_size = filter.page_size.unwrap_or(10).max(1);
+    let offset = (page - 1) * page_size;
+
+    let p_limit = params_vec.len() + 1;
+    let p_offset = params_vec.len() + 2;
+
+    let list_sql = format!(
+        r#"{}
+        SELECT 
+            norm_mobile,
+            range_bills_count,
+            range_total_spent,
+            range_last_visit,
+            first_visit,
+            all_time_last_visit,
+            all_time_bills_count,
+            all_time_total_spent,
+            latest_name,
+            all_names_str
+        FROM customer_grouped
+        {}
+        LIMIT ?{} OFFSET ?{}"#,
+        cte_sql, order_by, p_limit, p_offset
+    );
+
+    let mut query_params = summary_params;
+    query_params.push(&page_size);
+    query_params.push(&offset);
+
+    let mut stmt = conn.prepare(&list_sql)?;
+    let rows = stmt.query_map(&query_params[..], |row| {
+        let mobile: String = row.get(0)?;
+        let bills_count: i64 = row.get(1)?;
+        let total_spent: f64 = row.get(2)?;
+        let range_last_visit: Option<String> = row.get(3)?;
+        let first_visit: Option<String> = row.get(4)?;
+        let all_time_last_visit: Option<String> = row.get(5)?;
+        let all_time_bills_count: i64 = row.get(6)?;
+        let all_time_total_spent: f64 = row.get(7)?;
+        let latest_name: Option<String> = row.get(8)?;
+        let all_names_str: Option<String> = row.get(9)?;
+
+        let display_name = latest_name.filter(|s| !s.trim().is_empty()).unwrap_or_else(|| {
+            if mobile == "No mobile" {
+                "Walk-in Customer".to_string()
+            } else {
+                "Customer".to_string()
+            }
+        });
+
+        let mut other_names = Vec::new();
+        if let Some(names_concat) = all_names_str {
+            for n in names_concat.split(',') {
+                let trimmed = n.trim();
+                if !trimmed.is_empty() && trimmed != display_name && !other_names.contains(&trimmed.to_string()) {
+                    other_names.push(trimmed.to_string());
+                }
+            }
+        }
+
+        let last_visit = range_last_visit
+            .or(all_time_last_visit)
+            .unwrap_or_default();
+
+        Ok(CustomerListItem {
+            mobile,
+            display_name,
+            other_names,
+            bills_count,
+            total_spent: (total_spent * 100.0).round() / 100.0,
+            last_visit,
+            first_visit: first_visit.unwrap_or_default(),
+            all_time_bills_count,
+            all_time_total_spent: (all_time_total_spent * 100.0).round() / 100.0,
+        })
+    })?;
+
+    let mut customers = Vec::new();
+    for c in rows {
+        customers.push(c?);
+    }
+
+    Ok(PaginatedCustomersResult {
+        customers,
+        total_count,
+        page,
+        page_size,
+        summary,
+    })
+}
+
+/// Retrieves customer aggregate detail and all bills belonging to that customer
+pub fn fetch_customer_detail(
+    conn: &Connection,
+    mobile: &str,
+    from_date: Option<&str>,
+    to_date: Option<&str>,
+    search_bill: Option<&str>,
+) -> Result<Option<CustomerDetailResult>> {
+    let clean_target = mobile.trim();
+    if clean_target.is_empty() {
+        return Ok(None);
+    }
+
+    let mut range_conditions = Vec::new();
+    let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    let mobile_expr = if clean_target == "No mobile" {
+        "TRIM(b.customer_mobile) = ''".to_string()
+    } else {
+        params_vec.push(Box::new(clean_target.to_string()));
+        let p = params_vec.len();
+        format!(
+            "(CASE WHEN LENGTH(TRIM(b.customer_mobile)) >= 10 THEN SUBSTR(REPLACE(REPLACE(TRIM(b.customer_mobile), '+91', ''), ' ', ''), -10) ELSE TRIM(b.customer_mobile) END) = ?{}",
+            p
+        )
+    };
+
+    if let Some(from) = from_date {
+        let trimmed = from.trim();
+        if !trimmed.is_empty() {
+            params_vec.push(Box::new(trimmed.to_string()));
+            range_conditions.push(format!("substr(b.bill_date, 1, 10) >= ?{}", params_vec.len()));
+        }
+    }
+
+    if let Some(to) = to_date {
+        let trimmed = to.trim();
+        if !trimmed.is_empty() {
+            params_vec.push(Box::new(trimmed.to_string()));
+            range_conditions.push(format!("substr(b.bill_date, 1, 10) <= ?{}", params_vec.len()));
+        }
+    }
+
+    let range_expr = if range_conditions.is_empty() {
+        "1 = 1".to_string()
+    } else {
+        range_conditions.join(" AND ")
+    };
+
+    let summary_sql = format!(
+        r#"SELECT 
+            MIN(b.bill_date) AS first_visit,
+            MAX(b.bill_date) AS last_visit,
+            COUNT(*) AS all_time_bills_count,
+            COALESCE(SUM(b.grand_total), 0.0) AS all_time_total_spent,
+            COUNT(CASE WHEN {} THEN 1 END) AS range_bills_count,
+            COALESCE(SUM(CASE WHEN {} THEN b.grand_total ELSE 0.0 END), 0.0) AS range_total_spent,
+            (
+                SELECT b_latest.customer_name 
+                FROM bills b_latest 
+                WHERE {}
+                ORDER BY b_latest.id DESC LIMIT 1
+            ) AS latest_name,
+            GROUP_CONCAT(DISTINCT b.customer_name) AS all_names_str
+        FROM bills b
+        WHERE {}"#,
+        range_expr, range_expr, mobile_expr, mobile_expr
+    );
+
+    let summary_params: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+    let mut stmt = conn.prepare(&summary_sql)?;
+    let mut rows = stmt.query(&summary_params[..])?;
+
+    let row = match rows.next()? {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+
+    let all_time_bills: i64 = row.get(2)?;
+    if all_time_bills == 0 {
+        return Ok(None);
+    }
+
+    let first_visit: Option<String> = row.get(0)?;
+    let last_visit: Option<String> = row.get(1)?;
+    let all_time_total_spent: f64 = row.get(3)?;
+    let range_bills_count: i64 = row.get(4)?;
+    let range_total_spent: f64 = row.get(5)?;
+    let latest_name: Option<String> = row.get(6)?;
+    let all_names_str: Option<String> = row.get(7)?;
+
+    let display_name = latest_name.filter(|s| !s.trim().is_empty()).unwrap_or_else(|| {
+        if clean_target == "No mobile" {
+            "Walk-in Customer".to_string()
+        } else {
+            "Customer".to_string()
+        }
+    });
+
+    let mut other_names = Vec::new();
+    if let Some(names_concat) = all_names_str {
+        for n in names_concat.split(',') {
+            let trimmed = n.trim();
+            if !trimmed.is_empty() && trimmed != display_name && !other_names.contains(&trimmed.to_string()) {
+                other_names.push(trimmed.to_string());
+            }
+        }
+    }
+
+    let customer = CustomerListItem {
+        mobile: clean_target.to_string(),
+        display_name,
+        other_names,
+        bills_count: range_bills_count,
+        total_spent: (range_total_spent * 100.0).round() / 100.0,
+        last_visit: last_visit.unwrap_or_default(),
+        first_visit: first_visit.unwrap_or_default(),
+        all_time_bills_count: all_time_bills,
+        all_time_total_spent: (all_time_total_spent * 100.0).round() / 100.0,
+    };
+
+    // 2. Fetch bills in date range with optional bill number filter
+    let mut bill_conditions = Vec::new();
+    let mut bill_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    let b_mob_expr = if clean_target == "No mobile" {
+        "TRIM(b.customer_mobile) = ''".to_string()
+    } else {
+        bill_params.push(Box::new(clean_target.to_string()));
+        let p = bill_params.len();
+        format!(
+            "(CASE WHEN LENGTH(TRIM(b.customer_mobile)) >= 10 THEN SUBSTR(REPLACE(REPLACE(TRIM(b.customer_mobile), '+91', ''), ' ', ''), -10) ELSE TRIM(b.customer_mobile) END) = ?{}",
+            p
+        )
+    };
+    bill_conditions.push(b_mob_expr);
+
+    if let Some(from) = from_date {
+        let trimmed = from.trim();
+        if !trimmed.is_empty() {
+            bill_params.push(Box::new(trimmed.to_string()));
+            bill_conditions.push(format!("substr(b.bill_date, 1, 10) >= ?{}", bill_params.len()));
+        }
+    }
+
+    if let Some(to) = to_date {
+        let trimmed = to.trim();
+        if !trimmed.is_empty() {
+            bill_params.push(Box::new(trimmed.to_string()));
+            bill_conditions.push(format!("substr(b.bill_date, 1, 10) <= ?{}", bill_params.len()));
+        }
+    }
+
+    if let Some(sb) = search_bill {
+        let trimmed = sb.trim();
+        if !trimmed.is_empty() {
+            bill_params.push(Box::new(format!("%{}%", trimmed)));
+            bill_conditions.push(format!("b.bill_number LIKE ?{}", bill_params.len()));
+        }
+    }
+
+    let bills_where = format!("WHERE {}", bill_conditions.join(" AND "));
+    let bills_sql = format!(
+        r#"SELECT 
+            b.id, b.bill_number, b.customer_name, b.customer_mobile, b.doctor_name, b.bill_date,
+            b.discount_mode, b.payment_mode, b.sub_total, b.discount, b.gst_total, b.cgst, b.sgst, b.grand_total,
+            b.amount_in_words, b.store_name, b.store_address, b.store_phone, b.store_email, b.store_gstin,
+            b.store_dl_1, b.store_dl_2, b.store_footer_terms, b.store_logo_path, b.show_gstin, b.show_amount_in_words,
+            b.status, b.created_at
+        FROM bills b
+        {}
+        ORDER BY b.bill_date DESC, b.id DESC"#,
+        bills_where
+    );
+
+    let query_bill_params: Vec<&dyn rusqlite::ToSql> = bill_params.iter().map(|b| b.as_ref()).collect();
+    let mut stmt = conn.prepare(&bills_sql)?;
+    let bill_rows = stmt.query_map(&query_bill_params[..], |row| row_to_bill_record(row))?;
+
+    let mut bills = Vec::new();
+    let mut bill_ids = Vec::new();
+    for br in bill_rows {
+        let b = br?;
+        bill_ids.push(b.id);
+        bills.push(b);
+    }
+
+    let mut items_map = fetch_items_for_bills(conn, &bill_ids)?;
+    for b in &mut bills {
+        if let Some(items) = items_map.remove(&b.id) {
+            b.items = items;
+        }
+    }
+
+    Ok(Some(CustomerDetailResult {
+        customer,
+        bills,
+    }))
 }
 
 

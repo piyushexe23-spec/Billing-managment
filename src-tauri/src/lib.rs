@@ -310,6 +310,37 @@ fn get_bill_by_id(app: tauri::AppHandle, id: i64) -> Result<Option<db::BillRecor
     db::fetch_bill_by_id(&conn, id).map_err(|e| e.to_string())
 }
 
+/// Retrieves paginated customers derived from saved bills
+#[tauri::command]
+fn get_customers(app: tauri::AppHandle, filter: db::CustomerFilterInput) -> Result<db::PaginatedCustomersResult, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::fetch_customers_paginated(&conn, &filter).map_err(|e| e.to_string())
+}
+
+/// Retrieves customer aggregate detail and bills
+#[tauri::command]
+fn get_customer_detail(
+    app: tauri::AppHandle,
+    mobile: String,
+    from_date: Option<String>,
+    to_date: Option<String>,
+    search_bill: Option<String>,
+) -> Result<Option<db::CustomerDetailResult>, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::fetch_customer_detail(
+        &conn,
+        &mobile,
+        from_date.as_deref(),
+        to_date.as_deref(),
+        search_bill.as_deref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -351,7 +382,9 @@ pub fn run() {
             get_saleable_medicines,
             save_bill,
             get_bills,
-            get_bill_by_id
+            get_bill_by_id,
+            get_customers,
+            get_customer_detail
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
