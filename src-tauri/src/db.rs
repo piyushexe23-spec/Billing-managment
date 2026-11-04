@@ -561,6 +561,41 @@ pub struct BillRecord {
     pub created_at: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BillFilterInput {
+    pub from_date: Option<String>,
+    pub to_date: Option<String>,
+    pub search: Option<String>,
+    pub payment_mode: Option<String>,
+    pub discount_mode: Option<String>,
+    pub sort_by: Option<String>,
+    pub sort_order: Option<String>,
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BillHistorySummary {
+    pub total_bills: i64,
+    pub total_sales: f64,
+    pub total_discount: f64,
+    pub cash_sales: f64,
+    pub upi_sales: f64,
+    pub card_sales: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct PaginatedBillsResult {
+    pub bills: Vec<BillRecord>,
+    pub total_count: i64,
+    pub page: i64,
+    pub page_size: i64,
+    pub summary: BillHistorySummary,
+}
+
 /// Safely migrates existing medicine tables to add relational columns if missing
 pub fn migrate_medicine_tables(conn: &Connection) -> Result<()> {
     let mut stmt = conn.prepare("PRAGMA table_info(medicines)")?;
@@ -654,6 +689,10 @@ pub fn migrate_billing_tables(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_bill_items_bill ON bill_items(bill_id);
         CREATE INDEX IF NOT EXISTS idx_bill_items_med ON bill_items(medicine_id);
         CREATE INDEX IF NOT EXISTS idx_bill_items_batch ON bill_items(batch_id);
+        CREATE INDEX IF NOT EXISTS idx_bills_bill_date ON bills(bill_date);
+        CREATE INDEX IF NOT EXISTS idx_bills_date_sub ON bills(substr(bill_date, 1, 10));
+        CREATE INDEX IF NOT EXISTS idx_bills_payment_mode ON bills(payment_mode);
+        CREATE INDEX IF NOT EXISTS idx_bills_created_at ON bills(created_at);
         "#
     )?;
 
@@ -1922,4 +1961,282 @@ pub fn save_bill_transaction(conn: &mut Connection, input: &SaveBillInput) -> Re
         created_at,
     })
 }
+
+/// Helper to map a rusqlite row to a BillRecord (without items)
+fn row_to_bill_record(row: &rusqlite::Row) -> rusqlite::Result<BillRecord> {
+    Ok(BillRecord {
+        id: row.get(0)?,
+        bill_number: row.get(1)?,
+        customer_name: row.get(2)?,
+        customer_mobile: row.get(3)?,
+        doctor_name: row.get(4)?,
+        bill_date: row.get(5)?,
+        discount_mode: row.get(6)?,
+        payment_mode: row.get(7)?,
+        sub_total: row.get(8)?,
+        discount: row.get(9)?,
+        gst_total: row.get(10)?,
+        cgst: row.get(11)?,
+        sgst: row.get(12)?,
+        grand_total: row.get(13)?,
+        amount_in_words: row.get::<_, Option<String>>(14)?.unwrap_or_default(),
+        store_snapshot: BillStoreSnapshot {
+            store_name: row.get::<_, Option<String>>(15)?.unwrap_or_default(),
+            address: row.get(16)?,
+            phone: row.get(17)?,
+            email: row.get(18)?,
+            gstin: row.get(19)?,
+            drug_license_1: row.get(20)?,
+            drug_license_2: row.get(21)?,
+            footer_terms: row.get(22)?,
+            logo_path: row.get(23)?,
+            show_gstin: row.get::<_, i64>(24).unwrap_or(1) != 0,
+            show_amount_in_words: row.get::<_, i64>(25).unwrap_or(1) != 0,
+            tagline: None,
+        },
+        items: Vec::new(),
+        status: row.get::<_, Option<String>>(26)?.unwrap_or_else(|| "COMPLETED".to_string()),
+        created_at: row.get::<_, Option<String>>(27)?.unwrap_or_default(),
+    })
+}
+
+/// Helper to fetch items for a set of bills
+fn fetch_items_for_bills(conn: &Connection, bill_ids: &[i64]) -> Result<std::collections::HashMap<i64, Vec<BillItemRecord>>> {
+    let mut map = std::collections::HashMap::new();
+    if bill_ids.is_empty() {
+        return Ok(map);
+    }
+
+    let placeholders: Vec<String> = (1..=bill_ids.len()).map(|i| format!("?{}", i)).collect();
+    let query = format!(
+        r#"SELECT id, bill_id, medicine_id, batch_id, medicine_name, batch_number,
+                  exp_date, unit, quantity, cost_price, mrp, selling_price, rate, amount
+           FROM bill_items
+           WHERE bill_id IN ({})
+           ORDER BY id ASC"#,
+        placeholders.join(",")
+    );
+
+    let mut stmt = conn.prepare(&query)?;
+    let params: Vec<&dyn rusqlite::ToSql> = bill_ids.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+
+    let rows = stmt.query_map(&params[..], |row| {
+        Ok(BillItemRecord {
+            id: row.get(0)?,
+            bill_id: row.get(1)?,
+            medicine_id: row.get(2)?,
+            batch_id: row.get(3)?,
+            medicine_name: row.get(4)?,
+            batch_number: row.get(5)?,
+            exp_date: row.get(6)?,
+            unit: row.get(7)?,
+            quantity: row.get(8)?,
+            cost_price: row.get(9)?,
+            mrp: row.get(10)?,
+            selling_price: row.get(11)?,
+            rate: row.get(12)?,
+            amount: row.get(13)?,
+        })
+    })?;
+
+    for item in rows {
+        let it = item?;
+        map.entry(it.bill_id).or_insert_with(Vec::new).push(it);
+    }
+
+    Ok(map)
+}
+
+/// Fetches paginated bills matching filters, along with accurate summary KPIs
+pub fn fetch_bills_paginated(conn: &Connection, filter: &BillFilterInput) -> Result<PaginatedBillsResult> {
+    let mut where_clauses: Vec<String> = Vec::new();
+    let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if let Some(from) = &filter.from_date {
+        let trimmed = from.trim();
+        if !trimmed.is_empty() {
+            params_vec.push(Box::new(trimmed.to_string()));
+            where_clauses.push(format!("substr(b.bill_date, 1, 10) >= ?{}", params_vec.len()));
+        }
+    }
+
+    if let Some(to) = &filter.to_date {
+        let trimmed = to.trim();
+        if !trimmed.is_empty() {
+            params_vec.push(Box::new(trimmed.to_string()));
+            where_clauses.push(format!("substr(b.bill_date, 1, 10) <= ?{}", params_vec.len()));
+        }
+    }
+
+    if let Some(search) = &filter.search {
+        let trimmed = search.trim();
+        if !trimmed.is_empty() {
+            let pat = format!("%{}%", trimmed);
+            params_vec.push(Box::new(pat.clone()));
+            let p1 = params_vec.len();
+            params_vec.push(Box::new(pat.clone()));
+            let p2 = params_vec.len();
+            params_vec.push(Box::new(pat.clone()));
+            let p3 = params_vec.len();
+            params_vec.push(Box::new(pat));
+            let p4 = params_vec.len();
+            where_clauses.push(format!(
+                "(b.bill_number LIKE ?{} OR b.customer_name LIKE ?{} OR b.customer_mobile LIKE ?{} OR (b.doctor_name IS NOT NULL AND b.doctor_name LIKE ?{}))",
+                p1, p2, p3, p4
+            ));
+        }
+    }
+
+    if let Some(pm) = &filter.payment_mode {
+        let trimmed = pm.trim().to_uppercase();
+        if !trimmed.is_empty() && trimmed != "ALL" {
+            params_vec.push(Box::new(trimmed));
+            where_clauses.push(format!("UPPER(b.payment_mode) = ?{}", params_vec.len()));
+        }
+    }
+
+    if let Some(dm) = &filter.discount_mode {
+        let trimmed = dm.trim().to_uppercase();
+        if !trimmed.is_empty() && trimmed != "ALL" {
+            if trimmed == "DISCOUNTED" {
+                where_clauses.push("(UPPER(b.discount_mode) = 'DISCOUNTED' OR b.discount > 0.0)".to_string());
+            } else if trimmed == "NON_DISCOUNT" {
+                where_clauses.push("(UPPER(b.discount_mode) = 'NON_DISCOUNT' AND (b.discount IS NULL OR b.discount <= 0.0))".to_string());
+            }
+        }
+    }
+
+    let where_str = if where_clauses.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", where_clauses.join(" AND "))
+    };
+
+    // Calculate Summary aggregation on SQLite directly
+    let summary_sql = format!(
+        r#"SELECT 
+            COUNT(*),
+            COALESCE(SUM(b.grand_total), 0.0),
+            COALESCE(SUM(b.discount), 0.0),
+            COALESCE(SUM(CASE WHEN UPPER(b.payment_mode) = 'CASH' THEN b.grand_total ELSE 0.0 END), 0.0),
+            COALESCE(SUM(CASE WHEN UPPER(b.payment_mode) = 'UPI' THEN b.grand_total ELSE 0.0 END), 0.0),
+            COALESCE(SUM(CASE WHEN UPPER(b.payment_mode) = 'CARD' THEN b.grand_total ELSE 0.0 END), 0.0)
+           FROM bills b
+           {}"#,
+        where_str
+    );
+
+    let summary_params: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+    let summary: BillHistorySummary = conn.query_row(&summary_sql, &summary_params[..], |row| {
+        Ok(BillHistorySummary {
+            total_bills: row.get(0)?,
+            total_sales: (row.get::<_, f64>(1)? * 100.0).round() / 100.0,
+            total_discount: (row.get::<_, f64>(2)? * 100.0).round() / 100.0,
+            cash_sales: (row.get::<_, f64>(3)? * 100.0).round() / 100.0,
+            upi_sales: (row.get::<_, f64>(4)? * 100.0).round() / 100.0,
+            card_sales: (row.get::<_, f64>(5)? * 100.0).round() / 100.0,
+        })
+    })?;
+
+    let total_count = summary.total_bills;
+
+    // Sorting
+    let sort_col = match filter.sort_by.as_deref().unwrap_or("date") {
+        "bill_number" => "b.id",
+        "grand_total" => "b.grand_total",
+        "customer_name" => "b.customer_name",
+        _ => "b.bill_date",
+    };
+
+    let sort_dir = match filter.sort_order.as_deref().unwrap_or("desc").to_lowercase().as_str() {
+        "asc" => "ASC",
+        _ => "DESC",
+    };
+
+    let order_by = if sort_col == "b.id" {
+        format!("ORDER BY b.id {}", sort_dir)
+    } else {
+        format!("ORDER BY {} {}, b.id {}", sort_col, sort_dir, sort_dir)
+    };
+
+    // Pagination
+    let page = filter.page.unwrap_or(1).max(1);
+    let page_size = filter.page_size.unwrap_or(10).max(1);
+    let offset = (page - 1) * page_size;
+
+    let bills_sql = format!(
+        r#"SELECT 
+            b.id, b.bill_number, b.customer_name, b.customer_mobile, b.doctor_name, b.bill_date,
+            b.discount_mode, b.payment_mode, b.sub_total, b.discount, b.gst_total, b.cgst, b.sgst, b.grand_total,
+            b.amount_in_words, b.store_name, b.store_address, b.store_phone, b.store_email, b.store_gstin,
+            b.store_dl_1, b.store_dl_2, b.store_footer_terms, b.store_logo_path, b.show_gstin, b.show_amount_in_words,
+            b.status, b.created_at
+           FROM bills b
+           {}
+           {}
+           LIMIT ?{} OFFSET ?{}"#,
+        where_str,
+        order_by,
+        params_vec.len() + 1,
+        params_vec.len() + 2
+    );
+
+    let mut query_params = summary_params;
+    query_params.push(&page_size);
+    query_params.push(&offset);
+
+    let mut stmt = conn.prepare(&bills_sql)?;
+    let bill_rows = stmt.query_map(&query_params[..], |row| row_to_bill_record(row))?;
+
+    let mut bills = Vec::new();
+    let mut bill_ids = Vec::new();
+    for br in bill_rows {
+        let b = br?;
+        bill_ids.push(b.id);
+        bills.push(b);
+    }
+
+    // Attach items
+    let mut items_map = fetch_items_for_bills(conn, &bill_ids)?;
+    for bill in &mut bills {
+        if let Some(items) = items_map.remove(&bill.id) {
+            bill.items = items;
+        }
+    }
+
+    Ok(PaginatedBillsResult {
+        bills,
+        total_count,
+        page,
+        page_size,
+        summary,
+    })
+}
+
+/// Fetches a single bill by ID with its items
+pub fn fetch_bill_by_id(conn: &Connection, bill_id: i64) -> Result<Option<BillRecord>> {
+    let mut stmt = conn.prepare(
+        r#"SELECT 
+            b.id, b.bill_number, b.customer_name, b.customer_mobile, b.doctor_name, b.bill_date,
+            b.discount_mode, b.payment_mode, b.sub_total, b.discount, b.gst_total, b.cgst, b.sgst, b.grand_total,
+            b.amount_in_words, b.store_name, b.store_address, b.store_phone, b.store_email, b.store_gstin,
+            b.store_dl_1, b.store_dl_2, b.store_footer_terms, b.store_logo_path, b.show_gstin, b.show_amount_in_words,
+            b.status, b.created_at
+           FROM bills b
+           WHERE b.id = ?1"#
+    )?;
+
+    let mut rows = stmt.query(params![bill_id])?;
+    if let Some(row) = rows.next()? {
+        let mut bill = row_to_bill_record(row)?;
+        let mut items_map = fetch_items_for_bills(conn, &[bill.id])?;
+        if let Some(items) = items_map.remove(&bill.id) {
+            bill.items = items;
+        }
+        Ok(Some(bill))
+    } else {
+        Ok(None)
+    }
+}
+
 

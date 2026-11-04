@@ -4,9 +4,12 @@
  */
 
 import {
+  BillFilterInput,
+  BillHistorySummary,
   BillItem,
   BillRecord,
   DiscountMode,
+  PaginatedBillsResult,
   SaleableMedicine,
   SaveBillInput,
 } from "@/types/billing";
@@ -350,6 +353,148 @@ class BillingService {
     saveLocalBills(allBills);
 
     return billRecord;
+  }
+
+  /**
+   * Retrieves paginated bills matching filter options with summary KPIs
+   */
+  async getBills(filter: BillFilterInput = {}): Promise<PaginatedBillsResult> {
+    if (isTauri()) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const res = await invoke<PaginatedBillsResult>("get_bills", { filter });
+        if (res && Array.isArray(res.bills)) return res;
+      } catch (err) {
+        console.warn("Tauri get_bills fallback:", err);
+      }
+    }
+
+    // LocalStorage fallback for web preview and testing
+    const allBills = getLocalBills();
+    let filtered = [...allBills];
+
+    // Filter by date range (inclusive: fromDate <= billDate <= toDate)
+    if (filter.fromDate) {
+      const from = filter.fromDate.trim();
+      if (from) {
+        filtered = filtered.filter((b) => b.billDate.slice(0, 10) >= from);
+      }
+    }
+    if (filter.toDate) {
+      const to = filter.toDate.trim();
+      if (to) {
+        filtered = filtered.filter((b) => b.billDate.slice(0, 10) <= to);
+      }
+    }
+
+    // Filter by search (billNumber, customerName, customerMobile, doctorName)
+    if (filter.search) {
+      const term = filter.search.trim().toLowerCase();
+      if (term) {
+        filtered = filtered.filter((b) => {
+          const matchBill = b.billNumber.toLowerCase().includes(term);
+          const matchCust = b.customerName.toLowerCase().includes(term);
+          const matchMob = b.customerMobile.includes(term);
+          const matchDoc = b.doctorName ? b.doctorName.toLowerCase().includes(term) : false;
+          return matchBill || matchCust || matchMob || matchDoc;
+        });
+      }
+    }
+
+    // Filter by payment mode
+    if (filter.paymentMode && filter.paymentMode.toUpperCase() !== "ALL") {
+      const mode = filter.paymentMode.toUpperCase();
+      filtered = filtered.filter((b) => b.paymentMode.toUpperCase() === mode);
+    }
+
+    // Filter by discount mode
+    if (filter.discountMode && filter.discountMode.toUpperCase() !== "ALL") {
+      const dm = filter.discountMode.toUpperCase();
+      if (dm === "DISCOUNTED") {
+        filtered = filtered.filter((b) => b.discountMode === "DISCOUNTED" || b.discount > 0);
+      } else if (dm === "NON_DISCOUNT") {
+        filtered = filtered.filter((b) => b.discountMode === "NON_DISCOUNT" && (!b.discount || b.discount <= 0));
+      }
+    }
+
+    // Compute Summary KPIs on filtered set
+    const totalBills = filtered.length;
+    let totalSales = 0;
+    let totalDiscount = 0;
+    let cashSales = 0;
+    let upiSales = 0;
+    let cardSales = 0;
+
+    for (const b of filtered) {
+      totalSales += b.grandTotal || 0;
+      totalDiscount += b.discount || 0;
+      const pm = (b.paymentMode || "").toUpperCase();
+      if (pm === "CASH") cashSales += b.grandTotal || 0;
+      else if (pm === "UPI") upiSales += b.grandTotal || 0;
+      else if (pm === "CARD") cardSales += b.grandTotal || 0;
+    }
+
+    const summary: BillHistorySummary = {
+      totalBills,
+      totalSales: Number(totalSales.toFixed(2)),
+      totalDiscount: Number(totalDiscount.toFixed(2)),
+      cashSales: Number(cashSales.toFixed(2)),
+      upiSales: Number(upiSales.toFixed(2)),
+      cardSales: Number(cardSales.toFixed(2)),
+    };
+
+    // Sort
+    const sortBy = filter.sortBy || "date";
+    const sortOrder = filter.sortOrder || "desc";
+    const mult = sortOrder === "asc" ? 1 : -1;
+
+    filtered.sort((a, b) => {
+      if (sortBy === "bill_number") {
+        return mult * a.billNumber.localeCompare(b.billNumber);
+      }
+      if (sortBy === "grand_total") {
+        return mult * (a.grandTotal - b.grandTotal);
+      }
+      if (sortBy === "customer_name") {
+        return mult * a.customerName.localeCompare(b.customerName);
+      }
+      // default: date desc
+      const dateDiff = a.billDate.localeCompare(b.billDate);
+      if (dateDiff !== 0) return mult * dateDiff;
+      return mult * (a.id - b.id);
+    });
+
+    // Pagination
+    const page = Math.max(1, filter.page || 1);
+    const pageSize = Math.max(1, filter.pageSize || 10);
+    const offset = (page - 1) * pageSize;
+    const paginated = filtered.slice(offset, offset + pageSize);
+
+    return {
+      bills: paginated,
+      totalCount: totalBills,
+      page,
+      pageSize,
+      summary,
+    };
+  }
+
+  /**
+   * Retrieves a single bill record by ID
+   */
+  async getBillById(id: number): Promise<BillRecord | null> {
+    if (isTauri()) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const bill = await invoke<BillRecord | null>("get_bill_by_id", { id });
+        if (bill) return bill;
+      } catch (err) {
+        console.warn("Tauri get_bill_by_id fallback:", err);
+      }
+    }
+
+    const allBills = getLocalBills();
+    return allBills.find((b) => b.id === id) || null;
   }
 }
 

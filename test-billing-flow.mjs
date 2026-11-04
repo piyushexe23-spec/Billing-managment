@@ -406,7 +406,7 @@ console.log("\nTest 7: Static File & Component Verifications");
 
   // 1. Navigation verification
   assert(appLayoutSrc.includes('{ key: "new_bill", label: "New Bill", icon: Receipt, isImplemented: true }'), "AppLayout enables New Bill");
-  assert(appLayoutSrc.includes('{ key: "bill_history", label: "Bill History", icon: History, isImplemented: false'), "Bill History strictly remains isImplemented: false");
+  assert(appLayoutSrc.includes('{ key: "bill_history", label: "Bill History", icon: History, isImplemented: true }'), "Bill History is implemented");
   assert(appSrc.includes('<NewBillPage />'), "App.tsx routes to NewBillPage");
 
   // 2. Billing modes & GST

@@ -878,10 +878,40 @@ export async function downloadInvoicePdf(bill: BillRecord): Promise<void> {
 
   const html = generateInvoiceHtml(bill, finalLogo);
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+
+  // If File System Access API is supported (Chromium / Windows WebView2), trigger native Save As dialog
+  if (typeof window !== "undefined" && "showSaveFilePicker" in window) {
+    try {
+      const fileHandle = await (window as any).showSaveFilePicker({
+        suggestedName: `Invoice_${bill.billNumber}.pdf`,
+        types: [
+          {
+            description: "PDF Document",
+            accept: { "application/pdf": [".pdf"] },
+          },
+          {
+            description: "HTML Printable Document",
+            accept: { "text/html": [".html", ".htm"] },
+          },
+        ],
+      });
+      const writableStream = await fileHandle.createWritable();
+      await writableStream.write(blob);
+      await writableStream.close();
+      return;
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        // User deliberately canceled the dialog
+        return;
+      }
+    }
+  }
+
+  // Standard browser fallback download
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `Invoice_${bill.billNumber}.html`;
+  a.download = `Invoice_${bill.billNumber}.pdf`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

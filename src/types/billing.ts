@@ -139,3 +139,33 @@ export interface SaveBillInput {
   }>;
 }
 
+export interface BillFilterInput {
+  fromDate?: string | null;
+  toDate?: string | null;
+  search?: string | null;
+  paymentMode?: string | null;
+  discountMode?: string | null;
+  sortBy?: string | null;
+  sortOrder?: "asc" | "desc" | null;
+  page?: number | null;
+  pageSize?: number | null;
+}
+
+export interface BillHistorySummary {
+  totalBills: number;
+  totalSales: number;
+  totalDiscount: number;
+  cashSales: number;
+  upiSales: number;
+  cardSales: number;
+}
+
+export interface PaginatedBillsResult {
+  bills: BillRecord[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  summary: BillHistorySummary;
+}
+
+
