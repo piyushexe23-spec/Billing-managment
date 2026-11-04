@@ -6,6 +6,7 @@ import { MedicinesPage } from "@/pages/MedicinesPage";
 import { NewBillPage } from "@/pages/NewBillPage";
 import { BillHistoryPage } from "@/pages/BillHistoryPage";
 import { CustomersPage } from "@/pages/CustomersPage";
+import { BackupRestorePage } from "@/pages/BackupRestorePage";
 import { AppLayout, NavItemKey } from "@/components/layout/AppLayout";
 import { authService, AuthUser } from "@/services/authService";
 import { Loader2, ShieldCheck } from "lucide-react";
@@ -119,6 +120,8 @@ export const App: React.FC = () => {
         <BillHistoryPage />
       ) : activeNav === "customers" ? (
         <CustomersPage />
+      ) : activeNav === "backup_restore" ? (
+        <BackupRestorePage onRestoreSuccess={handleLogout} />
       ) : (
         <DashboardPage />
       )}

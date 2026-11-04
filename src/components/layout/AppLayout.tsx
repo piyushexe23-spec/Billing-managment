@@ -52,7 +52,7 @@ const NAV_ITEMS: NavItemConfig[] = [
   { key: "customers", label: "Customers", icon: Users, isImplemented: true },
   { key: "reports", label: "Reports", icon: BarChart3, isImplemented: false, phaseText: "Phase 5" },
   { key: "store_details", label: "Store Details", icon: Store, isImplemented: true },
-  { key: "backup_restore", label: "Backup & Restore", icon: DatabaseBackup, isImplemented: false, phaseText: "Phase 6" },
+  { key: "backup_restore", label: "Backup & Restore", icon: DatabaseBackup, isImplemented: true },
 ];
 
 export const AppLayout: React.FC<AppLayoutProps> = ({

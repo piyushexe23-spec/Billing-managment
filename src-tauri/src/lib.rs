@@ -341,6 +341,126 @@ fn get_customer_detail(
     .map_err(|e| e.to_string())
 }
 
+/// Retrieves active backup settings
+#[tauri::command]
+fn get_backup_settings(app: tauri::AppHandle) -> Result<db::BackupSettings, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::fetch_backup_settings(&conn).map_err(|e| e.to_string())
+}
+
+/// Saves updated backup settings
+#[tauri::command]
+fn save_backup_settings(app: tauri::AppHandle, settings: db::BackupSettings) -> Result<(), String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::persist_backup_settings(&conn, &settings).map_err(|e| e.to_string())
+}
+
+/// Creates a new verified database backup archive
+#[tauri::command]
+fn create_backup(
+    app: tauri::AppHandle,
+    backup_type: Option<String>,
+    target_folder: Option<String>,
+) -> Result<db::BackupRecord, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+
+    let folder = if let Some(f) = target_folder {
+        std::path::PathBuf::from(f)
+    } else {
+        let settings = db::fetch_backup_settings(&conn).map_err(|e| e.to_string())?;
+        std::path::PathBuf::from(settings.backup_folder)
+    };
+
+    let btype = backup_type.as_deref().unwrap_or("Manual");
+    db::create_database_backup(&conn, &app_data_dir, &folder, btype).map_err(|e| e.to_string())
+}
+
+/// Lists all backup archives present in the configured backup folder
+#[tauri::command]
+fn list_backups(app: tauri::AppHandle, folder: Option<String>) -> Result<Vec<db::BackupRecord>, String> {
+    let folder_path = if let Some(f) = folder {
+        std::path::PathBuf::from(f)
+    } else {
+        let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let db_path = app_data_dir.join("im_medicos.db");
+        let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+        let settings = db::fetch_backup_settings(&conn).map_err(|e| e.to_string())?;
+        std::path::PathBuf::from(settings.backup_folder)
+    };
+
+    db::list_backups_in_folder(&folder_path).map_err(|e| e.to_string())
+}
+
+/// Deletes a specific backup archive
+#[tauri::command]
+fn delete_backup(file_path: String) -> Result<(), String> {
+    db::delete_backup_file(std::path::Path::new(&file_path)).map_err(|e| e.to_string())
+}
+
+/// Validates a backup archive before restoring
+#[tauri::command]
+fn validate_backup_file(app: tauri::AppHandle, file_path: String) -> Result<db::BackupValidationResult, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    db::validate_backup_file(&app_data_dir, std::path::Path::new(&file_path)).map_err(|e| e.to_string())
+}
+
+/// Executes safe restore with pre-restore safety copy and atomic rollback
+#[tauri::command]
+fn restore_backup(app: tauri::AppHandle, file_path: String) -> Result<db::RestoreResult, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    db::perform_restore(&app_data_dir, std::path::Path::new(&file_path)).map_err(|e| e.to_string())
+}
+
+/// Retrieves live counts of records
+#[tauri::command]
+fn get_current_counts(app: tauri::AppHandle) -> Result<db::BackupCounts, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::fetch_data_counts(&conn).map_err(|e| e.to_string())
+}
+
+/// Opens the backup folder in Windows Explorer
+#[tauri::command]
+fn open_backup_folder(app: tauri::AppHandle, folder: Option<String>) -> Result<(), String> {
+    let folder_path = if let Some(f) = folder {
+        std::path::PathBuf::from(f)
+    } else {
+        let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let db_path = app_data_dir.join("im_medicos.db");
+        let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+        let settings = db::fetch_backup_settings(&conn).map_err(|e| e.to_string())?;
+        std::path::PathBuf::from(settings.backup_folder)
+    };
+
+    std::fs::create_dir_all(&folder_path).ok();
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(&folder_path)
+            .spawn()
+            .map_err(|e| format!("Failed to open folder: {}", e))?;
+    }
+
+    Ok(())
+}
+
+/// Checks and runs automated daily backup if due
+#[tauri::command]
+fn check_auto_backup(app: tauri::AppHandle) -> Result<Option<db::BackupRecord>, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::check_and_run_auto_backup(&conn, &app_data_dir).map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -355,6 +475,10 @@ pub fn run() {
                 eprintln!("Failed to initialize database: {}", e);
             } else {
                 println!("Database successfully connected at {:?}", db_path);
+                // Run automatic daily backup check on startup
+                if let Ok(conn) = db::get_connection(&db_path) {
+                    db::check_and_run_auto_backup(&conn, &app_data_dir).ok();
+                }
             }
 
             Ok(())
@@ -384,7 +508,17 @@ pub fn run() {
             get_bills,
             get_bill_by_id,
             get_customers,
-            get_customer_detail
+            get_customer_detail,
+            get_backup_settings,
+            save_backup_settings,
+            create_backup,
+            list_backups,
+            delete_backup,
+            validate_backup_file,
+            restore_backup,
+            get_current_counts,
+            open_backup_folder,
+            check_auto_backup
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -44,8 +44,10 @@ pub fn init_database<P: AsRef<Path>>(path: P) -> Result<Connection> {
     create_tables(&conn)?;
     migrate_medicine_tables(&conn)?;
     migrate_billing_tables(&conn)?;
+    migrate_backup_tables(&conn)?;
     seed_default_admin(&conn)?;
     seed_default_store(&conn)?;
+    seed_default_backup_settings(&conn)?;
     cleanup_demo_medicines(&conn)?;
 
     Ok(conn)
@@ -56,6 +58,7 @@ pub fn get_connection<P: AsRef<Path>>(path: P) -> Result<Connection> {
     let conn = Connection::open(path)?;
     conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
     migrate_billing_tables(&conn).ok();
+    migrate_backup_tables(&conn).ok();
     Ok(conn)
 }
 
@@ -2706,5 +2709,1013 @@ pub fn fetch_customer_detail(
         bills,
     }))
 }
+
+// ---------------------------------------------------------------------------
+// COMMAND 07: BACKUP & RESTORE MODULE
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupSettings {
+    pub auto_backup_enabled: bool,
+    pub backup_folder: String,
+    pub retention_count: i64,
+    pub last_backup_time: Option<String>,
+    pub last_backup_size: Option<i64>,
+    pub last_backup_status: String,
+    pub updated_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupCounts {
+    pub bills: i64,
+    pub medicines: i64,
+    pub batches: i64,
+    pub customers: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupManifest {
+    pub app_name: String,
+    pub app_version: String,
+    pub schema_version: i64,
+    pub created_at: String,
+    pub backup_type: String,
+    pub counts: BackupCounts,
+    pub checksums: std::collections::HashMap<String, String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupRecord {
+    pub file_name: String,
+    pub file_path: String,
+    pub size_bytes: i64,
+    pub created_at: String,
+    pub backup_type: String,
+    pub manifest: Option<BackupManifest>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupValidationResult {
+    pub is_valid: bool,
+    pub error: Option<String>,
+    pub manifest: Option<BackupManifest>,
+    pub current_counts: Option<BackupCounts>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RestoreResult {
+    pub success: bool,
+    pub message: String,
+    pub pre_restore_file: Option<String>,
+    pub restored_counts: Option<BackupCounts>,
+}
+
+/// Creates backup settings table if not already present
+pub fn migrate_backup_tables(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS backup_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            auto_backup_enabled INTEGER NOT NULL DEFAULT 1,
+            backup_folder TEXT NOT NULL,
+            retention_count INTEGER NOT NULL DEFAULT 7,
+            last_backup_time TEXT,
+            last_backup_size INTEGER,
+            last_backup_status TEXT NOT NULL DEFAULT 'NONE',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        "#,
+    )?;
+    Ok(())
+}
+
+/// Seeds initial backup settings row with default Downloads/IM_MEDICOS_Backups folder
+pub fn seed_default_backup_settings(conn: &Connection) -> Result<()> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM backup_settings WHERE id = 1",
+        [],
+        |row| row.get(0),
+    ).unwrap_or(0);
+
+    if count == 0 {
+        let default_folder = match std::env::var("USERPROFILE") {
+            Ok(user_profile) => format!("{}\\Downloads\\IM_MEDICOS_Backups", user_profile),
+            Err(_) => "IM_MEDICOS_Backups".to_string(),
+        };
+
+        conn.execute(
+            r#"INSERT INTO backup_settings (
+                id, auto_backup_enabled, backup_folder, retention_count, last_backup_status
+            ) VALUES (1, 1, ?1, 7, 'NONE')"#,
+            params![default_folder],
+        )?;
+    }
+
+    Ok(())
+}
+
+/// Retrieves the active backup settings
+pub fn fetch_backup_settings(conn: &Connection) -> Result<BackupSettings> {
+    seed_default_backup_settings(conn).ok();
+    let mut stmt = conn.prepare(
+        r#"SELECT 
+            auto_backup_enabled, backup_folder, retention_count, 
+            last_backup_time, last_backup_size, last_backup_status, updated_at
+        FROM backup_settings WHERE id = 1"#,
+    )?;
+
+    stmt.query_row([], |row| {
+        let auto_enabled: i64 = row.get(0)?;
+        Ok(BackupSettings {
+            auto_backup_enabled: auto_enabled != 0,
+            backup_folder: row.get(1)?,
+            retention_count: row.get(2)?,
+            last_backup_time: row.get(3)?,
+            last_backup_size: row.get(4)?,
+            last_backup_status: row.get(5)?,
+            updated_at: row.get(6)?,
+        })
+    })
+}
+
+/// Persists updated backup settings
+pub fn persist_backup_settings(conn: &Connection, settings: &BackupSettings) -> Result<()> {
+    conn.execute(
+        r#"INSERT INTO backup_settings (
+            id, auto_backup_enabled, backup_folder, retention_count, updated_at
+        ) VALUES (1, ?1, ?2, ?3, CURRENT_TIMESTAMP)
+        ON CONFLICT(id) DO UPDATE SET
+            auto_backup_enabled = excluded.auto_backup_enabled,
+            backup_folder = excluded.backup_folder,
+            retention_count = excluded.retention_count,
+            updated_at = CURRENT_TIMESTAMP"#,
+        params![
+            if settings.auto_backup_enabled { 1 } else { 0 },
+            settings.backup_folder,
+            settings.retention_count.clamp(1, 30),
+        ],
+    )?;
+    Ok(())
+}
+
+/// Computes counts of live records (bills, medicines, batches, customers)
+pub fn fetch_data_counts(conn: &Connection) -> Result<BackupCounts> {
+    let bills: i64 = conn.query_row("SELECT COUNT(*) FROM bills", [], |r| r.get(0)).unwrap_or(0);
+    let medicines: i64 = conn.query_row("SELECT COUNT(*) FROM medicines", [], |r| r.get(0)).unwrap_or(0);
+    let batches: i64 = conn.query_row("SELECT COUNT(*) FROM medicine_batches", [], |r| r.get(0)).unwrap_or(0);
+    let customers: i64 = conn.query_row(
+        r#"SELECT COUNT(DISTINCT 
+            CASE 
+                WHEN LENGTH(TRIM(customer_mobile)) >= 10 THEN SUBSTR(REPLACE(REPLACE(TRIM(customer_mobile), '+91', ''), ' ', ''), -10)
+                ELSE TRIM(customer_mobile)
+            END
+        ) FROM bills WHERE TRIM(customer_mobile) != ''"#,
+        [],
+        |r| r.get(0)
+    ).unwrap_or(0);
+
+    Ok(BackupCounts {
+        bills,
+        medicines,
+        batches,
+        customers,
+    })
+}
+
+/// Pure Rust implementation of SHA-256 (NIST FIPS 180-4 standard)
+pub fn sha256_digest(data: &[u8]) -> [u8; 32] {
+    let mut h: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ];
+
+    let k: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ];
+
+    let bit_len = (data.len() as u64) * 8;
+    let mut msg = data.to_vec();
+    msg.push(0x80);
+    while (msg.len() % 64) != 56 {
+        msg.push(0);
+    }
+    msg.extend_from_slice(&bit_len.to_be_bytes());
+
+    for chunk in msg.chunks_exact(64) {
+        let mut w = [0u32; 64];
+        for (i, part) in chunk.chunks_exact(4).enumerate() {
+            w[i] = u32::from_be_bytes([part[0], part[1], part[2], part[3]]);
+        }
+        for i in 16..64 {
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16].wrapping_add(s0).wrapping_add(w[i - 7]).wrapping_add(s1);
+        }
+
+        let mut a = h[0];
+        let mut b = h[1];
+        let mut c = h[2];
+        let mut d = h[3];
+        let mut e = h[4];
+        let mut f = h[5];
+        let mut g = h[6];
+        let mut h_val = h[7];
+
+        for i in 0..64 {
+            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let ch = (e & f) ^ ((!e) & g);
+            let temp1 = h_val.wrapping_add(s1).wrapping_add(ch).wrapping_add(k[i]).wrapping_add(w[i]);
+            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let maj = (a & b) ^ (a & c) ^ (b & c);
+            let temp2 = s0.wrapping_add(maj);
+
+            h_val = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(temp1);
+            d = c;
+            c = b;
+            b = a;
+            a = temp1.wrapping_add(temp2);
+        }
+
+        h[0] = h[0].wrapping_add(a);
+        h[1] = h[1].wrapping_add(b);
+        h[2] = h[2].wrapping_add(c);
+        h[3] = h[3].wrapping_add(d);
+        h[4] = h[4].wrapping_add(e);
+        h[5] = h[5].wrapping_add(f);
+        h[6] = h[6].wrapping_add(g);
+        h[7] = h[7].wrapping_add(h_val);
+    }
+
+    let mut result = [0u8; 32];
+    for (i, val) in h.iter().enumerate() {
+        result[i * 4..(i + 1) * 4].copy_from_slice(&val.to_be_bytes());
+    }
+    result
+}
+
+pub fn compute_sha256_hex(data: &[u8]) -> String {
+    let bytes = sha256_digest(data);
+    let mut s = String::with_capacity(64);
+    for b in bytes {
+        s.push_str(&format!("{:02x}", b));
+    }
+    s
+}
+
+pub fn compute_file_sha256<P: AsRef<Path>>(path: P) -> std::io::Result<String> {
+    let bytes = std::fs::read(path)?;
+    Ok(compute_sha256_hex(&bytes))
+}
+
+/// Creates a full, verified backup archive into target folder
+pub fn create_database_backup(
+    conn: &Connection,
+    app_data_dir: &Path,
+    backup_folder: &Path,
+    backup_type: &str,
+) -> Result<BackupRecord> {
+    std::fs::create_dir_all(backup_folder).map_err(|e| {
+        rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to create backup directory: {}", e),
+        )))
+    })?;
+
+    // Timestamp from SQLite localtime
+    let timestamp_file: String = conn.query_row(
+        "SELECT strftime('%Y-%m-%d_%H-%M-%S', 'now', 'localtime')",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let timestamp_display: String = conn.query_row(
+        "SELECT strftime('%Y-%m-%d %H:%M:%S', 'now', 'localtime')",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let file_name = if backup_type == "Pre-restore" {
+        format!("IM_MEDICOS_Backup_{}_PreRestore.zip", timestamp_file)
+    } else {
+        format!("IM_MEDICOS_Backup_{}.zip", timestamp_file)
+    };
+
+    let final_zip_path = backup_folder.join(&file_name);
+
+    // Staging temp directory for atomic snapshot preparation
+    let staging_dir = std::env::temp_dir().join(format!("im_medicos_staging_{}", timestamp_file));
+    std::fs::create_dir_all(&staging_dir).map_err(|e| {
+        rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to create staging directory: {}", e),
+        )))
+    })?;
+
+    let staging_db = staging_dir.join("im_medicos.db");
+    let staging_db_str = staging_db.to_string_lossy().to_string();
+
+    // 1. Online SQLite backup snapshot via VACUUM INTO
+    conn.execute("VACUUM INTO ?1", params![staging_db_str])?;
+
+    // 2. Verify PRAGMA integrity_check on the snapshot
+    {
+        let verify_conn = Connection::open(&staging_db)?;
+        let integrity: String = verify_conn.query_row("PRAGMA integrity_check;", [], |r| r.get(0))?;
+        if integrity != "ok" {
+            std::fs::remove_dir_all(&staging_dir).ok();
+            return Err(rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Database snapshot integrity check failed: {}", integrity),
+            ))));
+        }
+    }
+
+    // 3. Compute checksums
+    let mut checksums = std::collections::HashMap::new();
+    let db_checksum = compute_file_sha256(&staging_db).map_err(|e| {
+        rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to compute database SHA-256: {}", e),
+        )))
+    })?;
+    checksums.insert("im_medicos.db".to_string(), db_checksum);
+
+    // 4. Copy logos folder if present
+    let live_logos = app_data_dir.join("logos");
+    let mut has_logos = false;
+    if live_logos.exists() {
+        let staging_logos = staging_dir.join("logos");
+        std::fs::create_dir_all(&staging_logos).ok();
+        if let Ok(entries) = std::fs::read_dir(&live_logos) {
+            for entry in entries.flatten() {
+                let p = entry.path();
+                if p.is_file() {
+                    let fname = entry.file_name().to_string_lossy().to_string();
+                    let target_logo = staging_logos.join(&fname);
+                    if std::fs::copy(&p, &target_logo).is_ok() {
+                        has_logos = true;
+                        if let Ok(logo_hash) = compute_file_sha256(&target_logo) {
+                            checksums.insert(format!("logos/{}", fname), logo_hash);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Gather data counts
+    let counts = fetch_data_counts(conn)?;
+
+    // 6. Generate manifest.json
+    let manifest = BackupManifest {
+        app_name: "IM MEDICOS".to_string(),
+        app_version: "0.1.0".to_string(),
+        schema_version: 1,
+        created_at: timestamp_display.clone(),
+        backup_type: backup_type.to_string(),
+        counts,
+        checksums,
+    };
+
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest).map_err(|e| {
+        rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to serialize manifest: {}", e),
+        )))
+    })?;
+    std::fs::write(staging_dir.join("manifest.json"), manifest_bytes).map_err(|e| {
+        rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to write manifest.json: {}", e),
+        )))
+    })?;
+
+    // 7. Archive using native Windows tar.exe
+    let temp_zip_path = staging_dir.join("archive_temp.zip");
+    let mut tar_cmd = std::process::Command::new("tar.exe");
+    tar_cmd.arg("-a").arg("-cf").arg(&temp_zip_path).arg("-C").arg(&staging_dir);
+    tar_cmd.arg("manifest.json").arg("im_medicos.db");
+    if has_logos {
+        tar_cmd.arg("logos");
+    }
+
+    let status = tar_cmd.status().map_err(|e| {
+        rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to execute zip compression: {}", e),
+        )))
+    })?;
+
+    if !status.success() || !temp_zip_path.exists() {
+        std::fs::remove_dir_all(&staging_dir).ok();
+        return Err(rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Zip archiving returned non-zero status code".to_string(),
+        ))));
+    }
+
+    let size_bytes = match std::fs::metadata(&temp_zip_path) {
+        Ok(m) => m.len() as i64,
+        Err(_) => 0,
+    };
+
+    // 8. Atomically move archive to destination
+    if let Err(e) = std::fs::copy(&temp_zip_path, &final_zip_path) {
+        std::fs::remove_dir_all(&staging_dir).ok();
+        return Err(rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to save backup zip: {}", e),
+        ))));
+    }
+
+    // Cleanup staging
+    std::fs::remove_dir_all(&staging_dir).ok();
+
+    // 9. Update backup settings table with last backup metadata
+    conn.execute(
+        r#"UPDATE backup_settings SET 
+            last_backup_time = ?1,
+            last_backup_size = ?2,
+            last_backup_status = 'SUCCESS',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = 1"#,
+        params![timestamp_display, size_bytes],
+    ).ok();
+
+    // 10. If automatic backup, execute retention cleanup
+    if backup_type == "Auto" {
+        cleanup_auto_backup_retention(conn, backup_folder).ok();
+    }
+
+    Ok(BackupRecord {
+        file_name,
+        file_path: final_zip_path.to_string_lossy().to_string(),
+        size_bytes,
+        created_at: timestamp_display,
+        backup_type: backup_type.to_string(),
+        manifest: Some(manifest),
+    })
+}
+
+/// Enforces automatic backup retention count by deleting oldest Auto backups
+pub fn cleanup_auto_backup_retention(conn: &Connection, backup_folder: &Path) -> Result<()> {
+    let settings = fetch_backup_settings(conn)?;
+    let retention_limit = settings.retention_count.max(1) as usize;
+
+    let records = list_backups_in_folder(backup_folder)?;
+    let auto_records: Vec<_> = records
+        .into_iter()
+        .filter(|r| r.backup_type == "Auto")
+        .collect();
+
+    if auto_records.len() > retention_limit {
+        // Records are already sorted newest first
+        for old_record in &auto_records[retention_limit..] {
+            std::fs::remove_file(&old_record.file_path).ok();
+        }
+    }
+
+    Ok(())
+}
+
+/// Lists all backup archives found in the specified backup folder
+pub fn list_backups_in_folder(backup_folder: &Path) -> Result<Vec<BackupRecord>> {
+    if !backup_folder.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut records = Vec::new();
+    let entries = match std::fs::read_dir(backup_folder) {
+        Ok(e) => e,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_file() {
+            let fname = entry.file_name().to_string_lossy().to_string();
+            if fname.starts_with("IM_MEDICOS_Backup_") && fname.ends_with(".zip") {
+                let metadata = match p.metadata() {
+                    Ok(m) => m,
+                    Err(_) => continue,
+                };
+                let size_bytes = metadata.len() as i64;
+
+                let backup_type = if fname.contains("_PreRestore") {
+                    "Pre-restore".to_string()
+                } else if fname.contains("_Auto") {
+                    "Auto".to_string()
+                } else {
+                    // Check manifest inside zip or default to Manual
+                    "Manual".to_string()
+                };
+
+                // Date from modified time or filename
+                let created_at = extract_date_from_filename(&fname).unwrap_or_else(|| {
+                    if let Ok(mod_time) = metadata.modified() {
+                        let dur = mod_time.duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+                        format!("Timestamp {}", dur.as_secs())
+                    } else {
+                        "Unknown".to_string()
+                    }
+                });
+
+                records.push(BackupRecord {
+                    file_name: fname,
+                    file_path: p.to_string_lossy().to_string(),
+                    size_bytes,
+                    created_at,
+                    backup_type,
+                    manifest: None,
+                });
+            }
+        }
+    }
+
+    // Sort newest first
+    records.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+
+    Ok(records)
+}
+
+fn extract_date_from_filename(fname: &str) -> Option<String> {
+    // IM_MEDICOS_Backup_YYYY-MM-DD_HH-MM-SS.zip
+    let stem = fname.strip_prefix("IM_MEDICOS_Backup_")?;
+    let raw_date = stem.split('.').next()?;
+    let clean = raw_date.replace("_PreRestore", "").replace("_Auto", "");
+    if clean.len() >= 19 {
+        let parts: Vec<&str> = clean.split('_').collect();
+        if parts.len() >= 2 {
+            let d = parts[0];
+            let t = parts[1].replace('-', ":");
+            return Some(format!("{} {}", d, t));
+        }
+    }
+    None
+}
+
+/// Deletes a backup archive safely
+pub fn delete_backup_file(file_path: &Path) -> Result<()> {
+    if !file_path.exists() {
+        return Ok(());
+    }
+
+    let fname = file_path.file_name().and_then(|f| f.to_str()).unwrap_or_default();
+    if !fname.starts_with("IM_MEDICOS_Backup_") || !fname.ends_with(".zip") {
+        return Err(rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "Only IM MEDICOS backup archives (.zip) can be deleted",
+        ))));
+    }
+
+    std::fs::remove_file(file_path).map_err(|e| {
+        rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("Failed to delete backup file: {}", e),
+        )))
+    })?;
+
+    Ok(())
+}
+
+/// Validates a backup archive before restore (format, manifest, app name, schema, checksums, integrity)
+pub fn validate_backup_file(
+    app_data_dir: &Path,
+    zip_path: &Path,
+) -> Result<BackupValidationResult> {
+    let live_db_path = app_data_dir.join("im_medicos.db");
+    let current_counts = if live_db_path.exists() {
+        if let Ok(conn) = Connection::open(&live_db_path) {
+            fetch_data_counts(&conn).ok()
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    if !zip_path.exists() {
+        return Ok(BackupValidationResult {
+            is_valid: false,
+            error: Some("Backup file does not exist or cannot be accessed".to_string()),
+            manifest: None,
+            current_counts,
+        });
+    }
+
+    let temp_extract_dir = std::env::temp_dir().join(format!(
+        "im_medicos_val_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    ));
+
+    std::fs::create_dir_all(&temp_extract_dir).ok();
+
+    // 1. Extract zip with tar.exe
+    let mut tar_cmd = std::process::Command::new("tar.exe");
+    tar_cmd.arg("-xf").arg(zip_path).arg("-C").arg(&temp_extract_dir);
+    let status = match tar_cmd.status() {
+        Ok(s) => s,
+        Err(e) => {
+            std::fs::remove_dir_all(&temp_extract_dir).ok();
+            return Ok(BackupValidationResult {
+                is_valid: false,
+                error: Some(format!("Failed to open backup zip: {}", e)),
+                manifest: None,
+                current_counts,
+            });
+        }
+    };
+
+    if !status.success() {
+        std::fs::remove_dir_all(&temp_extract_dir).ok();
+        return Ok(BackupValidationResult {
+            is_valid: false,
+            error: Some("Corrupt or invalid backup zip file".to_string()),
+            manifest: None,
+            current_counts,
+        });
+    }
+
+    // 2. Validate manifest.json exists
+    let manifest_path = temp_extract_dir.join("manifest.json");
+    if !manifest_path.exists() {
+        std::fs::remove_dir_all(&temp_extract_dir).ok();
+        return Ok(BackupValidationResult {
+            is_valid: false,
+            error: Some("Invalid backup archive: manifest.json missing".to_string()),
+            manifest: None,
+            current_counts,
+        });
+    }
+
+    let manifest_bytes = match std::fs::read(&manifest_path) {
+        Ok(b) => b,
+        Err(_) => {
+            std::fs::remove_dir_all(&temp_extract_dir).ok();
+            return Ok(BackupValidationResult {
+                is_valid: false,
+                error: Some("Failed to read manifest.json".to_string()),
+                manifest: None,
+                current_counts,
+            });
+        }
+    };
+
+    let manifest: BackupManifest = match serde_json::from_slice(&manifest_bytes) {
+        Ok(m) => m,
+        Err(e) => {
+            std::fs::remove_dir_all(&temp_extract_dir).ok();
+            return Ok(BackupValidationResult {
+                is_valid: false,
+                error: Some(format!("Invalid manifest structure: {}", e)),
+                manifest: None,
+                current_counts,
+            });
+        }
+    };
+
+    // 3. Verify app name
+    if manifest.app_name != "IM MEDICOS" {
+        std::fs::remove_dir_all(&temp_extract_dir).ok();
+        return Ok(BackupValidationResult {
+            is_valid: false,
+            error: Some(format!(
+                "Backup archive was created for '{}', not 'IM MEDICOS'",
+                manifest.app_name
+            )),
+            manifest: None,
+            current_counts,
+        });
+    }
+
+    // 4. Verify schema version (cannot restore newer schema than app supports)
+    if manifest.schema_version > 1 {
+        std::fs::remove_dir_all(&temp_extract_dir).ok();
+        return Ok(BackupValidationResult {
+            is_valid: false,
+            error: Some(format!(
+                "Backup was created with a newer software version (schema v{}). Please update IM MEDICOS before restoring.",
+                manifest.schema_version
+            )),
+            manifest: None,
+            current_counts,
+        });
+    }
+
+    // 5. Verify SHA-256 checksums
+    for (rel_path, expected_hash) in &manifest.checksums {
+        // Zip-slip protection: forbid .. or absolute paths
+        if rel_path.contains("..") || rel_path.starts_with('/') || rel_path.starts_with('\\') {
+            std::fs::remove_dir_all(&temp_extract_dir).ok();
+            return Ok(BackupValidationResult {
+                is_valid: false,
+                error: Some("Suspicious path detected in backup archive (path traversal rejected)".to_string()),
+                manifest: None,
+                current_counts,
+            });
+        }
+
+        let target_file = temp_extract_dir.join(rel_path);
+        if !target_file.exists() {
+            std::fs::remove_dir_all(&temp_extract_dir).ok();
+            return Ok(BackupValidationResult {
+                is_valid: false,
+                error: Some(format!("Missing file from archive: {}", rel_path)),
+                manifest: None,
+                current_counts,
+            });
+        }
+
+        let actual_hash = match compute_file_sha256(&target_file) {
+            Ok(h) => h,
+            Err(e) => {
+                std::fs::remove_dir_all(&temp_extract_dir).ok();
+                return Ok(BackupValidationResult {
+                    is_valid: false,
+                    error: Some(format!("Could not read {} for checksum verification: {}", rel_path, e)),
+                    manifest: None,
+                    current_counts,
+                });
+            }
+        };
+
+        if &actual_hash != expected_hash {
+            std::fs::remove_dir_all(&temp_extract_dir).ok();
+            return Ok(BackupValidationResult {
+                is_valid: false,
+                error: Some(format!(
+                    "SHA-256 checksum mismatch for '{}'. Archive may be corrupted or modified.",
+                    rel_path
+                )),
+                manifest: None,
+                current_counts,
+            });
+        }
+    }
+
+    // 6. Verify SQLite database integrity
+    let extracted_db = temp_extract_dir.join("im_medicos.db");
+    if !extracted_db.exists() {
+        std::fs::remove_dir_all(&temp_extract_dir).ok();
+        return Ok(BackupValidationResult {
+            is_valid: false,
+            error: Some("Archive does not contain im_medicos.db".to_string()),
+            manifest: None,
+            current_counts,
+        });
+    }
+
+    let integrity_result = match Connection::open(&extracted_db) {
+        Ok(test_conn) => {
+            let res: std::result::Result<String, _> = test_conn.query_row("PRAGMA integrity_check;", [], |r| r.get(0));
+            res.unwrap_or_else(|e| format!("integrity error: {}", e))
+        }
+        Err(e) => format!("Failed to open extracted SQLite database: {}", e),
+    };
+
+    if integrity_result != "ok" {
+        std::fs::remove_dir_all(&temp_extract_dir).ok();
+        return Ok(BackupValidationResult {
+            is_valid: false,
+            error: Some(format!("Database integrity check failed: {}", integrity_result)),
+            manifest: None,
+            current_counts,
+        });
+    }
+
+    std::fs::remove_dir_all(&temp_extract_dir).ok();
+
+    Ok(BackupValidationResult {
+        is_valid: true,
+        error: None,
+        manifest: Some(manifest),
+        current_counts,
+    })
+}
+
+/// Performs safe restore with pre-restore safety snapshot and automatic rollback on failure
+pub fn perform_restore(app_data_dir: &Path, zip_path: &Path) -> Result<RestoreResult> {
+    // Step 1: Pre-validation
+    let validation = validate_backup_file(app_data_dir, zip_path)?;
+    if !validation.is_valid {
+        return Ok(RestoreResult {
+            success: false,
+            message: validation.error.unwrap_or_else(|| "Backup validation failed".to_string()),
+            pre_restore_file: None,
+            restored_counts: None,
+        });
+    }
+
+    let manifest = validation.manifest.ok_or_else(|| {
+        rusqlite::Error::UserFunctionError(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "Manifest not found in validation",
+        )))
+    })?;
+
+    let live_db_path = app_data_dir.join("im_medicos.db");
+
+    // Step 2: Automatic Pre-restore safety snapshot
+    let mut pre_restore_file_name = None;
+    if live_db_path.exists() {
+        let conn = Connection::open(&live_db_path)?;
+        let settings = fetch_backup_settings(&conn)?;
+        let backup_folder = Path::new(&settings.backup_folder);
+
+        let pre_backup = create_database_backup(&conn, app_data_dir, backup_folder, "Pre-restore");
+        match pre_backup {
+            Ok(rec) => pre_restore_file_name = Some(rec.file_name),
+            Err(e) => {
+                return Ok(RestoreResult {
+                    success: false,
+                    message: format!("Restore aborted: Failed to create safety Pre-restore backup ({})", e),
+                    pre_restore_file: None,
+                    restored_counts: None,
+                });
+            }
+        }
+    }
+
+    // Step 3: Extract archive into staging restore directory
+    let temp_restore_dir = std::env::temp_dir().join(format!(
+        "im_medicos_payload_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+    ));
+
+    std::fs::create_dir_all(&temp_restore_dir).ok();
+
+    let mut tar_cmd = std::process::Command::new("tar.exe");
+    tar_cmd.arg("-xf").arg(zip_path).arg("-C").arg(&temp_restore_dir);
+    if let Err(e) = tar_cmd.status() {
+        std::fs::remove_dir_all(&temp_restore_dir).ok();
+        return Ok(RestoreResult {
+            success: false,
+            message: format!("Failed to extract backup payload: {}", e),
+            pre_restore_file: pre_restore_file_name,
+            restored_counts: None,
+        });
+    }
+
+    // Step 4: Atomic file swap with rollback safety
+    let swap_db_path = app_data_dir.join("im_medicos.db.bak_swap");
+    let swap_logos_path = app_data_dir.join("logos.bak_swap");
+    let live_logos_path = app_data_dir.join("logos");
+    let live_wal_path = app_data_dir.join("im_medicos.db-wal");
+    let live_shm_path = app_data_dir.join("im_medicos.db-shm");
+
+    // Clean up any stale swap files
+    std::fs::remove_file(&swap_db_path).ok();
+    std::fs::remove_dir_all(&swap_logos_path).ok();
+
+    // Move current live to swap
+    let mut swapped_db = false;
+    let mut swapped_logos = false;
+
+    if live_db_path.exists() {
+        if let Err(e) = std::fs::rename(&live_db_path, &swap_db_path) {
+            std::fs::remove_dir_all(&temp_restore_dir).ok();
+            return Ok(RestoreResult {
+                success: false,
+                message: format!("Failed to stage live database for swap: {}", e),
+                pre_restore_file: pre_restore_file_name,
+                restored_counts: None,
+            });
+        }
+        swapped_db = true;
+        // Clean WAL/SHM from previous live connection
+        std::fs::remove_file(&live_wal_path).ok();
+        std::fs::remove_file(&live_shm_path).ok();
+    }
+
+    if live_logos_path.exists() {
+        if std::fs::rename(&live_logos_path, &swap_logos_path).is_ok() {
+            swapped_logos = true;
+        }
+    }
+
+    // Copy restored database into live position
+    let extracted_db = temp_restore_dir.join("im_medicos.db");
+    if let Err(e) = std::fs::copy(&extracted_db, &live_db_path) {
+        // Rollback
+        if swapped_db {
+            std::fs::rename(&swap_db_path, &live_db_path).ok();
+        }
+        if swapped_logos {
+            std::fs::rename(&swap_logos_path, &live_logos_path).ok();
+        }
+        std::fs::remove_dir_all(&temp_restore_dir).ok();
+        return Ok(RestoreResult {
+            success: false,
+            message: format!("Restore failed copying database file: {}. Previous state rolled back.", e),
+            pre_restore_file: pre_restore_file_name,
+            restored_counts: None,
+        });
+    }
+
+    // Copy restored logos if present in payload
+    let extracted_logos = temp_restore_dir.join("logos");
+    if extracted_logos.exists() {
+        std::fs::create_dir_all(&live_logos_path).ok();
+        if let Ok(entries) = std::fs::read_dir(&extracted_logos) {
+            for entry in entries.flatten() {
+                let target = live_logos_path.join(entry.file_name());
+                std::fs::copy(entry.path(), target).ok();
+            }
+        }
+    }
+
+    // Step 5: Verify restored database opens and passes quick_check
+    let verify_swap = match Connection::open(&live_db_path) {
+        Ok(c) => {
+            let res: std::result::Result<String, _> = c.query_row("PRAGMA quick_check;", [], |r| r.get(0));
+            res.unwrap_or_else(|e| format!("quick_check error: {}", e))
+        }
+        Err(e) => format!("Could not open restored database: {}", e),
+    };
+
+    if verify_swap != "ok" {
+        // ROLLBACK
+        std::fs::remove_file(&live_db_path).ok();
+        if swapped_db {
+            std::fs::rename(&swap_db_path, &live_db_path).ok();
+        }
+        if swapped_logos {
+            std::fs::remove_dir_all(&live_logos_path).ok();
+            std::fs::rename(&swap_logos_path, &live_logos_path).ok();
+        }
+        std::fs::remove_dir_all(&temp_restore_dir).ok();
+        return Ok(RestoreResult {
+            success: false,
+            message: format!("Restored database failed integrity verification ({}). Active data rolled back.", verify_swap),
+            pre_restore_file: pre_restore_file_name,
+            restored_counts: None,
+        });
+    }
+
+    // Successful restore: clean up swap files and temp files
+    std::fs::remove_file(&swap_db_path).ok();
+    std::fs::remove_dir_all(&swap_logos_path).ok();
+    std::fs::remove_dir_all(&temp_restore_dir).ok();
+
+    // Run baseline migrations on restored database to ensure backup_settings table exists
+    if let Ok(conn) = Connection::open(&live_db_path) {
+        migrate_backup_tables(&conn).ok();
+        seed_default_backup_settings(&conn).ok();
+    }
+
+    Ok(RestoreResult {
+        success: true,
+        message: "Data restored successfully from backup. Please log in with your credentials.".to_string(),
+        pre_restore_file: pre_restore_file_name,
+        restored_counts: Some(manifest.counts),
+    })
+}
+
+/// Checks if automatic backup is enabled and runs daily backup if not already completed today
+pub fn check_and_run_auto_backup(
+    conn: &Connection,
+    app_data_dir: &Path,
+) -> Result<Option<BackupRecord>> {
+    let settings = fetch_backup_settings(conn)?;
+    if !settings.auto_backup_enabled {
+        return Ok(None);
+    }
+
+    let today: String = conn.query_row("SELECT date('now', 'localtime')", [], |r| r.get(0))?;
+
+    if let Some(ref last_time) = settings.last_backup_time {
+        if last_time.starts_with(&today) {
+            // Already backed up today
+            return Ok(None);
+        }
+    }
+
+    let backup_folder = Path::new(&settings.backup_folder);
+    let record = create_database_backup(conn, app_data_dir, backup_folder, "Auto")?;
+    Ok(Some(record))
+}
+
 
 
