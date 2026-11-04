@@ -4,7 +4,19 @@
   "description": "Default permissions for IM MEDICOS",
   "windows": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "shell:default",
+    {
+      "identifier": "shell:allow-open",
+      "allow": [
+        {
+          "path": "$DOWNLOAD/IM_MEDICOS_Backups"
+        },
+        {
+          "path": "$DOWNLOAD/IM_MEDICOS_Backups/**"
+        }
+      ]
+    }
   ]
 }
 

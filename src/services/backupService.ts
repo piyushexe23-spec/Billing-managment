@@ -25,7 +25,10 @@ const SETTINGS_KEY = "im_medicos_backup_settings";
 const BACKUPS_LIST_KEY = "im_medicos_backups_list";
 
 function getDefaultBackupFolder(): string {
-  // Safe default path for Windows
+  // Dynamic default path for Windows user
+  if (typeof process !== "undefined" && process.env?.USERPROFILE) {
+    return `${process.env.USERPROFILE}\\Downloads\\IM_MEDICOS_Backups`;
+  }
   return "C:\\Users\\User\\Downloads\\IM_MEDICOS_Backups";
 }
 
@@ -390,16 +393,25 @@ class BackupService {
    * Opens backup folder in native Windows Explorer
    */
   async openBackupFolder(folder?: string): Promise<void> {
+    if (folder !== undefined && folder.trim() === "") {
+      throw new Error("Backup folder path cannot be empty.");
+    }
+
     if (isTauri()) {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        await invoke("open_backup_folder", { folder: folder || null });
+        await invoke("open_backup_folder", { folder: folder?.trim() || null });
         return;
-      } catch (err) {
-        console.warn("Tauri open_backup_folder fallback:", err);
+      } catch (err: unknown) {
+        console.error("Tauri open_backup_folder failed:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(msg);
       }
     }
-    console.log("Mock open backup folder:", folder || getDefaultBackupFolder());
+
+    // Browser / mock environment
+    const target = folder?.trim() || getDefaultBackupFolder();
+    console.log("Mock open backup folder:", target);
   }
 
   /**
@@ -429,3 +441,4 @@ class BackupService {
 }
 
 export const backupService = new BackupService();
+

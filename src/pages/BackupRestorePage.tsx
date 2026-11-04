@@ -230,12 +230,20 @@ export const BackupRestorePage: React.FC<BackupRestorePageProps> = ({
     }
   };
 
-  // Handle Open Backup Folder
+  // Handle Open Backup Folder (shared by both buttons)
   const handleOpenFolder = async () => {
+    setStatusMessage(null);
     try {
       await backupService.openBackupFolder(settings.backupFolder);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Failed to open backup folder:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatusMessage({
+        type: "error",
+        text: msg.startsWith("Could not open the folder")
+          ? msg
+          : `Could not open the folder: ${msg}`,
+      });
     }
   };
 

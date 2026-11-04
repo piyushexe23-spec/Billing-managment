@@ -426,27 +426,59 @@ fn get_current_counts(app: tauri::AppHandle) -> Result<db::BackupCounts, String>
     db::fetch_data_counts(&conn).map_err(|e| e.to_string())
 }
 
-/// Opens the backup folder in Windows Explorer
+/// Opens the backup folder in Windows Explorer using Tauri shell open API with fallback
 #[tauri::command]
 fn open_backup_folder(app: tauri::AppHandle, folder: Option<String>) -> Result<(), String> {
-    let folder_path = if let Some(f) = folder {
-        std::path::PathBuf::from(f)
-    } else {
-        let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
-        let db_path = app_data_dir.join("im_medicos.db");
-        let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
-        let settings = db::fetch_backup_settings(&conn).map_err(|e| e.to_string())?;
-        std::path::PathBuf::from(settings.backup_folder)
+    use tauri_plugin_shell::ShellExt;
+
+    // 1. Resolve target folder path: provided folder or database setting
+    let folder_str = match folder {
+        Some(f) if !f.trim().is_empty() => f.trim().to_string(),
+        _ => {
+            let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+            let db_path = app_data_dir.join("im_medicos.db");
+            let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+            let settings = db::fetch_backup_settings(&conn).map_err(|e| e.to_string())?;
+            settings.backup_folder.trim().to_string()
+        }
     };
 
-    std::fs::create_dir_all(&folder_path).ok();
+    // Reject empty path
+    if folder_str.is_empty() {
+        return Err("Could not open the folder: Backup folder path cannot be empty.".to_string());
+    }
+
+    let folder_path = std::path::PathBuf::from(&folder_str);
+
+    // 2. Create the backup folder if it does not exist before opening it
+    if !folder_path.exists() {
+        std::fs::create_dir_all(&folder_path).map_err(|e| {
+            format!("Could not create backup directory '{}': {}", folder_path.display(), e)
+        })?;
+    }
+
+    // 3. Open in Windows Explorer via Tauri shell open API or explorer.exe
+    let path_str = folder_path.to_string_lossy().to_string();
 
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("explorer.exe")
-            .arg(&folder_path)
-            .spawn()
-            .map_err(|e| format!("Failed to open folder: {}", e))?;
+        // Try opening with Tauri shell open API first
+        if let Err(shell_err) = app.shell().open(&path_str, None) {
+            log::warn!("Tauri shell.open failed ({}), falling back to explorer.exe", shell_err);
+            std::process::Command::new("explorer.exe")
+                .arg(&folder_path)
+                .spawn()
+                .map_err(|e| {
+                    format!("Could not open the folder '{}': {}", folder_path.display(), e)
+                })?;
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        app.shell().open(&path_str, None).map_err(|e| {
+            format!("Could not open the folder '{}': {}", folder_path.display(), e)
+        })?;
     }
 
     Ok(())

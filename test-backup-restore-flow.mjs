@@ -393,6 +393,72 @@ console.log("Test 10: Rust db.rs & lib.rs Backend Commands and Table Definitions
   console.log("✓ Test 10 Passed: Rust commands, database migrations, and handlers verified.\n");
 }
 
+// ----------------------------------------------------------------------
+// Test 11: Open Folder in Explorer Bugfix & Tauri Scoped Capabilities
+// ----------------------------------------------------------------------
+console.log("Test 11: Open Folder in Explorer Capabilities, Handlers & Validation");
+{
+  const defaultCap = JSON.parse(
+    fs.readFileSync(path.resolve("src-tauri/capabilities/default.json"), "utf8")
+  );
+  const libRs = fs.readFileSync(path.resolve("src-tauri/src/lib.rs"), "utf8");
+  const pageSrc = fs.readFileSync(path.resolve("src/pages/BackupRestorePage.tsx"), "utf8");
+  const serviceSrc = fs.readFileSync(path.resolve("src/services/backupService.ts"), "utf8");
+
+  // 1. Verify Tauri capabilities contain scoped shell:allow-open
+  assert.ok(
+    defaultCap.permissions.includes("shell:default"),
+    "default.json must include 'shell:default'"
+  );
+  const shellOpenEntry = defaultCap.permissions.find(
+    (p) => typeof p === "object" && p.identifier === "shell:allow-open"
+  );
+  assert.ok(shellOpenEntry, "default.json must contain scoped 'shell:allow-open' object");
+  assert.ok(
+    shellOpenEntry.allow.some((a) => a.path === "$DOWNLOAD/IM_MEDICOS_Backups"),
+    "shell:allow-open must be scoped to $DOWNLOAD/IM_MEDICOS_Backups"
+  );
+
+  // 2. Verify Rust open_backup_folder creates folder if missing and rejects empty path
+  assert.ok(
+    libRs.includes("folder_str.is_empty()"),
+    "Rust open_backup_folder must reject empty folder path"
+  );
+  assert.ok(
+    libRs.includes("if !folder_path.exists()"),
+    "Rust open_backup_folder must check if folder exists before opening"
+  );
+  assert.ok(
+    libRs.includes("std::fs::create_dir_all(&folder_path)"),
+    "Rust open_backup_folder must create missing directory"
+  );
+  assert.ok(
+    libRs.includes("app.shell().open"),
+    "Rust open_backup_folder must use Tauri shell open API"
+  );
+
+  // 3. Verify frontend service re-throws errors and rejects empty path
+  assert.ok(
+    serviceSrc.includes("throw new Error(msg)"),
+    "backupService.openBackupFolder must propagate error by throwing"
+  );
+
+  // 4. Verify both UI buttons call handleOpenFolder and display on-screen error
+  assert.ok(
+    pageSrc.includes("Could not open the folder"),
+    "BackupRestorePage must display 'Could not open the folder' on screen"
+  );
+  // Verify both buttons call handleOpenFolder
+  const openFolderMatches = (pageSrc.match(/onClick=\{handleOpenFolder\}/g) || []).length;
+  assert.strictEqual(
+    openFolderMatches,
+    2,
+    "Both 'Open' and 'Open Folder in Explorer' buttons must be wired to handleOpenFolder"
+  );
+
+  console.log("✓ Test 11 Passed: Scoped capabilities, directory creation, empty check, and error propagation verified.\n");
+}
+
 console.log("========================================================");
 console.log("ALL COMMAND 07 BACKUP & RESTORE TESTS PASSED (100% SUCCESS)!");
 console.log("========================================================\n");
