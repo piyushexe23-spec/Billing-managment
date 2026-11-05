@@ -100,6 +100,12 @@ export const storeService = {
 
     // Always mirror to local storage
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+
+    // Dispatch update notification for live sidebar display
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("store_details_updated", { detail: payload }));
+    }
+
     return payload;
   },
 

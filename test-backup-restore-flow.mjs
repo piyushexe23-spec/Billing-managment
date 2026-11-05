@@ -344,7 +344,8 @@ console.log("Test 9: Navigation & AppLayout Integration");
     "AppLayout has backup_restore marked isImplemented: true"
   );
   assert.ok(!layoutSrc.includes('key: "backup_restore", label: "Backup & Restore", icon: DatabaseBackup, isImplemented: false'), "AppLayout no longer has backup_restore as false");
-  assert.ok(appSrc.includes('<BackupRestorePage onRestoreSuccess={handleLogout} />'), "App.tsx routes activeNav backup_restore to BackupRestorePage");
+  assert.ok(appSrc.includes('<BackupRestorePage onRestoreSuccess='), "App.tsx routes activeNav backup_restore to BackupRestorePage");
+  assert.ok(appSrc.includes('setActiveNav("dashboard")'), "App.tsx routes to Dashboard on restore success");
 
   console.log("✓ Test 9 Passed: AppLayout and App.tsx navigation wiring verified.\n");
 }

@@ -301,19 +301,12 @@ export const BackupRestorePage: React.FC<BackupRestorePageProps> = ({
     }
   };
 
-  // Handle Restore Success Complete: Purge session and redirect
+  // Handle Restore Success Complete: Return to Dashboard
   const handleAcknowledgeRestoreSuccess = () => {
     setRestoreSuccessNotice(null);
     if (onRestoreSuccess) {
       onRestoreSuccess();
     } else {
-      // Clear session and reload to force login
-      try {
-        localStorage.removeItem("im_medicos_auth_token");
-        sessionStorage.clear();
-      } catch {
-        // Ignore
-      }
       window.location.reload();
     }
   };
@@ -1129,7 +1122,7 @@ export const BackupRestorePage: React.FC<BackupRestorePageProps> = ({
               onClick={handleAcknowledgeRestoreSuccess}
               className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-medical-navy-900 text-white font-bold text-xs hover:bg-medical-navy-800 transition shadow-md"
             >
-              Continue to Login Screen
+              Return to Dashboard
               <ArrowRight className="h-4 w-4 text-medical-green-400" />
             </button>
           </div>

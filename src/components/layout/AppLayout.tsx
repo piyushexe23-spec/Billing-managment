@@ -9,7 +9,6 @@ import {
   BarChart3,
   Store,
   DatabaseBackup,
-  LogOut,
   Menu,
   X,
   ShieldCheck,
@@ -17,6 +16,8 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { storeService } from "@/services/storeService";
+import { StoreDetails } from "@/types/store";
 
 export type NavItemKey =
   | "dashboard"
@@ -29,8 +30,6 @@ export type NavItemKey =
   | "backup_restore";
 
 interface AppLayoutProps {
-  currentUser?: string;
-  onLogout: () => void;
   children: React.ReactNode;
   activeItem?: NavItemKey;
   onNavChange?: (item: NavItemKey) => void;
@@ -44,6 +43,41 @@ interface NavItemConfig {
   phaseText?: string;
 }
 
+const PAGE_META: Record<NavItemKey, { title: string; subtitle: string }> = {
+  dashboard: {
+    title: "Dashboard Overview",
+    subtitle: "IM MEDICOS Billing & Pharmacy System",
+  },
+  new_bill: {
+    title: "New Bill",
+    subtitle: "Create and print pharmacy invoice",
+  },
+  bill_history: {
+    title: "Bill History",
+    subtitle: "View, search and reprint past bills",
+  },
+  medicines: {
+    title: "Medicine Inventory",
+    subtitle: "Manage medicines, stock levels and expiry",
+  },
+  customers: {
+    title: "Customers",
+    subtitle: "Customer directory and bill history",
+  },
+  reports: {
+    title: "Reports",
+    subtitle: "Sales, stock and profit reports",
+  },
+  store_details: {
+    title: "Store Details & Settings",
+    subtitle: "Pharmacy Configuration & Invoicing Setup",
+  },
+  backup_restore: {
+    title: "Backup & Restore",
+    subtitle: "Protect your pharmacy data",
+  },
+};
+
 const NAV_ITEMS: NavItemConfig[] = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard, isImplemented: true },
   { key: "new_bill", label: "New Bill", icon: Receipt, isImplemented: true },
@@ -56,14 +90,47 @@ const NAV_ITEMS: NavItemConfig[] = [
 ];
 
 export const AppLayout: React.FC<AppLayoutProps> = ({
-  currentUser = "admin",
-  onLogout,
   children,
   activeItem: activeItemProp,
   onNavChange,
 }) => {
   const [internalActiveItem, setInternalActiveItem] = useState<NavItemKey>("dashboard");
   const activeItem = activeItemProp ?? internalActiveItem;
+
+  // Store name for the read-only sidebar badge
+  const [storeName, setStoreName] = useState<string>("IM MEDICOS");
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadStoreName = async () => {
+      try {
+        const details = await storeService.getStoreDetails();
+        if (isMounted && details?.storeName?.trim()) {
+          setStoreName(details.storeName.trim());
+        }
+      } catch {
+        if (isMounted) {
+          setStoreName("IM MEDICOS");
+        }
+      }
+    };
+    loadStoreName();
+
+    const handleStoreUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent<StoreDetails>;
+      if (customEvent.detail?.storeName?.trim()) {
+        setStoreName(customEvent.detail.storeName.trim());
+      } else {
+        loadStoreName();
+      }
+    };
+
+    window.addEventListener("store_details_updated", handleStoreUpdate);
+    return () => {
+      isMounted = false;
+      window.removeEventListener("store_details_updated", handleStoreUpdate);
+    };
+  }, []);
 
   // Single source of truth for desktop collapse state (expanded by default)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -215,37 +282,29 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           })}
         </nav>
 
-        {/* Sidebar Footer Controls: User Session Badge & Logout */}
-        <div className="p-3 flex-shrink-0 border-t border-medical-navy-900/80 bg-medical-navy-950 space-y-2">
-          {!isSidebarCollapsed && (
-            <div className="flex items-center gap-2.5 px-2.5 py-2 rounded-xl bg-medical-navy-900/80 border border-medical-navy-800">
-              <div className="w-8 h-8 rounded-full bg-medical-navy-700 border border-medical-navy-600 flex items-center justify-center font-bold text-xs text-medical-green-400 shrink-0">
-                {currentUser.slice(0, 2).toUpperCase()}
+        {/* Sidebar Footer: Store Name Badge (Read-only from Store Details) */}
+        <div className="p-3 flex-shrink-0 border-t border-medical-navy-900/80 bg-medical-navy-950">
+          {!isSidebarCollapsed ? (
+            <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl bg-medical-navy-900/80 border border-medical-navy-800">
+              <div className="w-8 h-8 rounded-full bg-medical-navy-700 border border-medical-navy-600 flex items-center justify-center text-medical-green-400 shrink-0">
+                <Store className="h-4 w-4" />
               </div>
               <div className="flex-1 min-w-0 text-left">
-                <span className="text-xs font-bold text-white block truncate">
-                  {currentUser}
+                <span className="text-xs font-bold text-white block truncate" title={storeName || "IM MEDICOS"}>
+                  {storeName || "IM MEDICOS"}
                 </span>
                 <span className="text-[10px] text-medical-slate-400 block truncate font-mono">
                   Station #01 • Local
                 </span>
               </div>
             </div>
+          ) : (
+            <div className="flex items-center justify-center py-1" title={storeName || "IM MEDICOS"}>
+              <div className="w-8 h-8 rounded-full bg-medical-navy-700 border border-medical-navy-600 flex items-center justify-center text-medical-green-400 shrink-0">
+                <Store className="h-4 w-4" />
+              </div>
+            </div>
           )}
-
-          {/* Logout Button */}
-          <button
-            type="button"
-            onClick={onLogout}
-            className={cn(
-              "w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-red-300 hover:text-white hover:bg-red-600/20 border border-red-500/20 transition-all cursor-pointer",
-              isSidebarCollapsed && "p-2"
-            )}
-            title="Log out of IM MEDICOS"
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            {!isSidebarCollapsed && <span>Log Out</span>}
-          </button>
         </div>
       </aside>
 
@@ -284,19 +343,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             {/* Header Titles */}
             <div className="flex items-center gap-2 min-w-0">
               <h1 className="text-base font-bold text-medical-navy-950 truncate">
-                {activeItem === "store_details"
-                  ? "Store Details & Settings"
-                  : activeItem === "medicines"
-                  ? "Medicine Inventory"
-                  : "Dashboard Overview"}
+                {PAGE_META[activeItem]?.title || "Dashboard Overview"}
               </h1>
               <span className="text-medical-slate-300 hidden sm:inline">•</span>
               <span className="text-xs text-medical-slate-500 hidden sm:inline font-medium truncate">
-                {activeItem === "store_details"
-                  ? "Pharmacy Configuration & Invoicing Setup"
-                  : activeItem === "medicines"
-                  ? "Manage medicines, stock levels and expiry."
-                  : "IM MEDICOS Billing & Pharmacy System"}
+                {PAGE_META[activeItem]?.subtitle || "IM MEDICOS Billing & Pharmacy System"}
               </span>
             </div>
           </div>
@@ -308,21 +359,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               <span className="h-1.5 w-1.5 rounded-full bg-medical-green-600 animate-pulse" />
               <span className="hidden sm:inline">Offline SQLite Ready</span>
               <span className="sm:hidden">Ready</span>
-            </div>
-
-            {/* Profile Avatar Badge */}
-            <div className="flex items-center gap-2 pl-2 border-l border-medical-slate-200">
-              <div className="w-8 h-8 rounded-full bg-medical-navy-800 text-white flex items-center justify-center font-bold text-xs shadow-xs">
-                {currentUser.slice(0, 1).toUpperCase()}
-              </div>
-              <div className="hidden md:block text-left">
-                <span className="text-xs font-bold text-medical-navy-900 block leading-tight">
-                  {currentUser}
-                </span>
-                <span className="text-[10px] text-medical-slate-400 block leading-tight font-medium">
-                  Administrator
-                </span>
-              </div>
             </div>
           </div>
         </header>
@@ -362,8 +398,6 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             </span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="font-mono text-[10px]">Session: Active</span>
-            <span>•</span>
             <span>Windows Desktop Edition</span>
           </div>
         </footer>
