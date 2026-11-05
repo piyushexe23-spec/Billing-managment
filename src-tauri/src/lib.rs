@@ -493,6 +493,102 @@ fn check_auto_backup(app: tauri::AppHandle) -> Result<Option<db::BackupRecord>, 
     db::check_and_run_auto_backup(&conn, &app_data_dir).map_err(|e| e.to_string())
 }
 
+/// Retrieves Sales Report
+#[tauri::command]
+fn get_sales_report(
+    app: tauri::AppHandle,
+    from_date: Option<String>,
+    to_date: Option<String>,
+    group_by_month: Option<bool>,
+) -> Result<db::SalesReportData, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::fetch_sales_report(
+        &conn,
+        from_date.as_deref(),
+        to_date.as_deref(),
+        group_by_month.unwrap_or(false),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Retrieves Stock Report
+#[tauri::command]
+fn get_stock_report(
+    app: tauri::AppHandle,
+    sub_view: Option<String>,
+    include_archived: Option<bool>,
+    search: Option<String>,
+) -> Result<db::StockReportData, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::fetch_stock_report(
+        &conn,
+        sub_view.as_deref().unwrap_or("ALL"),
+        include_archived.unwrap_or(false),
+        search.as_deref(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Retrieves Top Selling Medicines Report
+#[tauri::command]
+fn get_top_selling_report(
+    app: tauri::AppHandle,
+    from_date: Option<String>,
+    to_date: Option<String>,
+    sort_by: Option<String>,
+    limit: Option<i64>,
+) -> Result<Vec<db::TopSellingReportItem>, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::fetch_top_selling_report(
+        &conn,
+        from_date.as_deref(),
+        to_date.as_deref(),
+        sort_by.as_deref().unwrap_or("QUANTITY"),
+        limit,
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Retrieves Profit Report
+#[tauri::command]
+fn get_profit_report(
+    app: tauri::AppHandle,
+    from_date: Option<String>,
+    to_date: Option<String>,
+    group_by_month: Option<bool>,
+) -> Result<db::ProfitReportData, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::fetch_profit_report(
+        &conn,
+        from_date.as_deref(),
+        to_date.as_deref(),
+        group_by_month.unwrap_or(false),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// Retrieves GST Summary Report
+#[tauri::command]
+fn get_gst_summary_report(
+    app: tauri::AppHandle,
+    from_date: Option<String>,
+    to_date: Option<String>,
+) -> Result<db::GstSummaryReportData, String> {
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("im_medicos.db");
+    let conn = db::get_connection(&db_path).map_err(|e| e.to_string())?;
+    db::fetch_gst_summary_report(&conn, from_date.as_deref(), to_date.as_deref())
+        .map_err(|e| e.to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -550,7 +646,12 @@ pub fn run() {
             restore_backup,
             get_current_counts,
             open_backup_folder,
-            check_auto_backup
+            check_auto_backup,
+            get_sales_report,
+            get_stock_report,
+            get_top_selling_report,
+            get_profit_report,
+            get_gst_summary_report
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

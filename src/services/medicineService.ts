@@ -1074,11 +1074,55 @@ export const medicineService = {
 
     const needsRestockCount = lowStockCount + outOfStockCount;
 
+    // Real top selling medicines derived from saved bills in storage fallback
+    let medicinesWithSales = 0;
+    const topSellingMedicines: InventorySummaryMetrics["topSellingMedicines"] = [];
+
+    try {
+      const rawBills = localStorage.getItem("im_medicos_bills");
+      if (rawBills) {
+        const bills = JSON.parse(rawBills);
+        if (Array.isArray(bills)) {
+          const medSalesMap = new Map<number, { id: number; name: string; qty: number; amount: number }>();
+          for (const bill of bills) {
+            if (Array.isArray(bill.items)) {
+              for (const item of bill.items) {
+                const medId = item.medicineId || 0;
+                const existing = medSalesMap.get(medId) || {
+                  id: medId,
+                  name: item.medicineName,
+                  qty: 0,
+                  amount: 0,
+                };
+                existing.qty += Number(item.quantity) || 0;
+                existing.amount += Number(item.amount) || 0;
+                medSalesMap.set(medId, existing);
+              }
+            }
+          }
+          medicinesWithSales = medSalesMap.size;
+          const sorted = Array.from(medSalesMap.values()).sort(
+            (a, b) => b.qty - a.qty || b.amount - a.amount
+          );
+          for (const item of sorted.slice(0, 5)) {
+            topSellingMedicines.push({
+              medicineId: item.id,
+              medicineName: item.name,
+              totalQuantitySold: item.qty,
+              totalSalesAmount: Math.round(item.amount * 100) / 100,
+            });
+          }
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
     return {
       totalMedicines,
       totalStockUnits,
-      medicinesWithSales: 0,
-      topSellingMedicines: [], // Honest empty state before billing exists
+      medicinesWithSales,
+      topSellingMedicines,
       lowStockCount,
       outOfStockCount,
       needsRestockCount,

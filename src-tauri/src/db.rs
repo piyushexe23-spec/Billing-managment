@@ -1533,7 +1533,7 @@ pub fn fetch_inventory_summary(conn: &Connection) -> Result<InventorySummaryMetr
         r#"SELECT COUNT(DISTINCT bi.medicine_id)
            FROM bill_items bi
            JOIN bills b ON bi.bill_id = b.id
-           WHERE b.status = 'COMPLETED'"#,
+           WHERE UPPER(COALESCE(b.status, 'COMPLETED')) = 'COMPLETED'"#,
         [],
         |row| row.get(0),
     ).unwrap_or(0);
@@ -1546,7 +1546,7 @@ pub fn fetch_inventory_summary(conn: &Connection) -> Result<InventorySummaryMetr
             COALESCE(SUM(bi.amount), 0.0) as total_amount
            FROM bill_items bi
            JOIN bills b ON bi.bill_id = b.id
-           WHERE b.status = 'COMPLETED'
+           WHERE UPPER(COALESCE(b.status, 'COMPLETED')) = 'COMPLETED'
            GROUP BY bi.medicine_id, bi.medicine_name
            ORDER BY total_qty DESC, total_amount DESC
            LIMIT 5"#,
@@ -3716,6 +3716,883 @@ pub fn check_and_run_auto_backup(
     let record = create_database_backup(conn, app_data_dir, backup_folder, "Auto")?;
     Ok(Some(record))
 }
+
+// ---------------------------------------------------------------------------
+// COMMAND 08: REPORTS MODULE
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SalesReportSummary {
+    pub total_bills: i64,
+    pub gross_sales: f64,
+    pub total_discount: f64,
+    pub net_sales: f64,
+    pub average_bill_value: f64,
+    pub cash_sales: f64,
+    pub upi_sales: f64,
+    pub card_sales: f64,
+    pub cash_bills_count: i64,
+    pub upi_bills_count: i64,
+    pub card_bills_count: i64,
+    pub discounted_bills_count: i64,
+    pub discounted_bills_amount: f64,
+    pub non_discount_bills_count: i64,
+    pub non_discount_bills_amount: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SalesReportRow {
+    pub period: String,
+    pub bills_count: i64,
+    pub gross_sales: f64,
+    pub discount: f64,
+    pub net_sales: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SalesReportData {
+    pub summary: SalesReportSummary,
+    pub rows: Vec<SalesReportRow>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct StockReportSummary {
+    pub total_active_medicines: i64,
+    pub total_stock_units: i64,
+    pub stock_value_cost: f64,
+    pub stock_value_mrp: f64,
+    pub low_stock_count: i64,
+    pub out_of_stock_count: i64,
+    pub expiring_soon_count: i64,
+    pub expired_count: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct StockReportItem {
+    pub id: i64,
+    pub medicine_name: String,
+    pub manufacturer: String,
+    pub batch_number: String,
+    pub exp_date: String,
+    pub quantity: i64,
+    pub unit: String,
+    pub cost_price: f64,
+    pub mrp: f64,
+    pub selling_price: f64,
+    pub stock_status: String,
+    pub expiry_status: String,
+    pub is_archived: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct StockReportData {
+    pub summary: StockReportSummary,
+    pub items: Vec<StockReportItem>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TopSellingReportItem {
+    pub rank: i64,
+    pub medicine_name: String,
+    pub manufacturer: String,
+    pub quantity_sold: i64,
+    pub bills_count: i64,
+    pub revenue: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfitReportSummary {
+    pub revenue: f64,
+    pub cogs: f64,
+    pub gross_profit: f64,
+    pub margin_percent: f64,
+    pub discount_given: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfitReportByDateRow {
+    pub period: String,
+    pub quantity_sold: i64,
+    pub revenue: f64,
+    pub cogs: f64,
+    pub gross_profit: f64,
+    pub margin_percent: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfitReportByMedicineRow {
+    pub medicine_name: String,
+    pub manufacturer: String,
+    pub quantity_sold: i64,
+    pub revenue: f64,
+    pub cogs: f64,
+    pub gross_profit: f64,
+    pub margin_percent: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfitReportData {
+    pub summary: ProfitReportSummary,
+    pub by_date: Vec<ProfitReportByDateRow>,
+    pub by_medicine: Vec<ProfitReportByMedicineRow>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GstSummaryRow {
+    pub date: String,
+    pub bills_count: i64,
+    pub billed_amount: f64,
+    pub taxable_value: f64,
+    pub cgst: f64,
+    pub sgst: f64,
+    pub total_gst: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GstSummaryReportData {
+    pub summary: GstSummaryReportSummary,
+    pub rows: Vec<GstSummaryRow>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GstSummaryReportSummary {
+    pub total_billed_amount: f64,
+    pub total_taxable_value: f64,
+    pub total_cgst: f64,
+    pub total_sgst: f64,
+    pub total_gst: f64,
+    pub bills_count: i64,
+}
+
+/// Helper to build date conditions
+fn build_date_conditions(
+    from_date: Option<&str>,
+    to_date: Option<&str>,
+    params: &mut Vec<Box<dyn rusqlite::ToSql>>,
+) -> Vec<String> {
+    let mut conds = vec!["UPPER(COALESCE(b.status, 'COMPLETED')) = 'COMPLETED'".to_string()];
+
+    if let Some(f) = from_date {
+        let trimmed = f.trim();
+        if !trimmed.is_empty() {
+            params.push(Box::new(trimmed.to_string()));
+            conds.push(format!("substr(b.bill_date, 1, 10) >= ?{}", params.len()));
+        }
+    }
+
+    if let Some(t) = to_date {
+        let trimmed = t.trim();
+        if !trimmed.is_empty() {
+            params.push(Box::new(trimmed.to_string()));
+            conds.push(format!("substr(b.bill_date, 1, 10) <= ?{}", params.len()));
+        }
+    }
+
+    conds
+}
+
+/// Fetches Sales Report aggregated from SQLite
+pub fn fetch_sales_report(
+    conn: &Connection,
+    from_date: Option<&str>,
+    to_date: Option<&str>,
+    group_by_month: bool,
+) -> Result<SalesReportData> {
+    let mut params_summary: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let conds_summary = build_date_conditions(from_date, to_date, &mut params_summary);
+    let where_summary = format!("WHERE {}", conds_summary.join(" AND "));
+
+    let summary_sql = format!(
+        r#"SELECT 
+            COUNT(b.id) as total_bills,
+            COALESCE(SUM(b.sub_total), 0.0) as gross_sales,
+            COALESCE(SUM(b.discount), 0.0) as total_discount,
+            COALESCE(SUM(b.grand_total), 0.0) as net_sales,
+            COALESCE(SUM(CASE WHEN UPPER(b.payment_mode) = 'CASH' THEN b.grand_total ELSE 0.0 END), 0.0) as cash_sales,
+            COALESCE(SUM(CASE WHEN UPPER(b.payment_mode) = 'UPI' THEN b.grand_total ELSE 0.0 END), 0.0) as upi_sales,
+            COALESCE(SUM(CASE WHEN UPPER(b.payment_mode) = 'CARD' THEN b.grand_total ELSE 0.0 END), 0.0) as card_sales,
+            COALESCE(SUM(CASE WHEN UPPER(b.payment_mode) = 'CASH' THEN 1 ELSE 0 END), 0) as cash_bills,
+            COALESCE(SUM(CASE WHEN UPPER(b.payment_mode) = 'UPI' THEN 1 ELSE 0 END), 0) as upi_bills,
+            COALESCE(SUM(CASE WHEN UPPER(b.payment_mode) = 'CARD' THEN 1 ELSE 0 END), 0) as card_bills,
+            COALESCE(SUM(CASE WHEN UPPER(b.discount_mode) = 'DISCOUNT' OR b.discount > 0 THEN 1 ELSE 0 END), 0) as disc_bills,
+            COALESCE(SUM(CASE WHEN UPPER(b.discount_mode) = 'DISCOUNT' OR b.discount > 0 THEN b.grand_total ELSE 0.0 END), 0.0) as disc_amount,
+            COALESCE(SUM(CASE WHEN UPPER(b.discount_mode) != 'DISCOUNT' AND b.discount = 0 THEN 1 ELSE 0 END), 0) as non_disc_bills,
+            COALESCE(SUM(CASE WHEN UPPER(b.discount_mode) != 'DISCOUNT' AND b.discount = 0 THEN b.grand_total ELSE 0.0 END), 0.0) as non_disc_amount
+        FROM bills b
+        {}"#,
+        where_summary
+    );
+
+    let query_params_summary: Vec<&dyn rusqlite::ToSql> =
+        params_summary.iter().map(|b| b.as_ref()).collect();
+
+    let mut stmt = conn.prepare(&summary_sql)?;
+    let summary = stmt.query_row(&query_params_summary[..], |row| {
+        let total_bills: i64 = row.get(0)?;
+        let gross_sales: f64 = row.get(1)?;
+        let total_discount: f64 = row.get(2)?;
+        let net_sales: f64 = row.get(3)?;
+        let avg = if total_bills > 0 {
+            net_sales / total_bills as f64
+        } else {
+            0.0
+        };
+
+        Ok(SalesReportSummary {
+            total_bills,
+            gross_sales: (gross_sales * 100.0).round() / 100.0,
+            total_discount: (total_discount * 100.0).round() / 100.0,
+            net_sales: (net_sales * 100.0).round() / 100.0,
+            average_bill_value: (avg * 100.0).round() / 100.0,
+            cash_sales: ((row.get::<_, f64>(4)? * 100.0).round()) / 100.0,
+            upi_sales: ((row.get::<_, f64>(5)? * 100.0).round()) / 100.0,
+            card_sales: ((row.get::<_, f64>(6)? * 100.0).round()) / 100.0,
+            cash_bills_count: row.get(7)?,
+            upi_bills_count: row.get(8)?,
+            card_bills_count: row.get(9)?,
+            discounted_bills_count: row.get(10)?,
+            discounted_bills_amount: ((row.get::<_, f64>(11)? * 100.0).round()) / 100.0,
+            non_discount_bills_count: row.get(12)?,
+            non_discount_bills_amount: ((row.get::<_, f64>(13)? * 100.0).round()) / 100.0,
+        })
+    })?;
+
+    // Table rows query
+    let mut params_rows: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let conds_rows = build_date_conditions(from_date, to_date, &mut params_rows);
+    let where_rows = format!("WHERE {}", conds_rows.join(" AND "));
+
+    let period_expr = if group_by_month {
+        "substr(b.bill_date, 1, 7)"
+    } else {
+        "substr(b.bill_date, 1, 10)"
+    };
+
+    let rows_sql = format!(
+        r#"SELECT 
+            {} as period,
+            COUNT(b.id) as bills_count,
+            COALESCE(SUM(b.sub_total), 0.0) as gross_sales,
+            COALESCE(SUM(b.discount), 0.0) as discount,
+            COALESCE(SUM(b.grand_total), 0.0) as net_sales
+        FROM bills b
+        {}
+        GROUP BY period
+        ORDER BY period DESC"#,
+        period_expr, where_rows
+    );
+
+    let query_params_rows: Vec<&dyn rusqlite::ToSql> =
+        params_rows.iter().map(|b| b.as_ref()).collect();
+
+    let mut stmt_rows = conn.prepare(&rows_sql)?;
+    let row_iter = stmt_rows.query_map(&query_params_rows[..], |row| {
+        let gross: f64 = row.get(2)?;
+        let disc: f64 = row.get(3)?;
+        let net: f64 = row.get(4)?;
+        Ok(SalesReportRow {
+            period: row.get(0)?,
+            bills_count: row.get(1)?,
+            gross_sales: (gross * 100.0).round() / 100.0,
+            discount: (disc * 100.0).round() / 100.0,
+            net_sales: (net * 100.0).round() / 100.0,
+        })
+    })?;
+
+    let mut rows = Vec::new();
+    for r in row_iter {
+        rows.push(r?);
+    }
+
+    Ok(SalesReportData { summary, rows })
+}
+
+/// Fetches Stock Report with KPIs and filtered batch items
+pub fn fetch_stock_report(
+    conn: &Connection,
+    sub_view: &str,
+    include_archived: bool,
+    search: Option<&str>,
+) -> Result<StockReportData> {
+    let today: String = conn.query_row("SELECT date('now', 'localtime')", [], |r| r.get(0))?;
+    let expiring_threshold_date: String = conn.query_row(
+        "SELECT date('now', 'localtime', '+10 days')",
+        [],
+        |r| r.get(0),
+    )?;
+
+    let threshold: i64 = conn.query_row(
+        "SELECT COALESCE(low_stock_threshold, 10) FROM store_details WHERE id = 1",
+        [],
+        |r| r.get(0),
+    ).unwrap_or(10);
+
+    // Summary calculations across active inventory
+    let total_active_medicines: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM medicines WHERE is_active = 1",
+        [],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let total_stock_units: i64 = conn.query_row(
+        r#"SELECT COALESCE(SUM(b.stock_qty), 0)
+           FROM medicine_batches b
+           JOIN medicines m ON b.medicine_id = m.id
+           WHERE b.is_active = 1 AND m.is_active = 1"#,
+        [],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let stock_value_cost: f64 = conn.query_row(
+        r#"SELECT COALESCE(SUM(b.stock_qty * b.cost_price), 0.0)
+           FROM medicine_batches b
+           JOIN medicines m ON b.medicine_id = m.id
+           WHERE b.is_active = 1 AND m.is_active = 1"#,
+        [],
+        |r| r.get(0),
+    ).unwrap_or(0.0);
+
+    let stock_value_mrp: f64 = conn.query_row(
+        r#"SELECT COALESCE(SUM(b.stock_qty * b.mrp), 0.0)
+           FROM medicine_batches b
+           JOIN medicines m ON b.medicine_id = m.id
+           WHERE b.is_active = 1 AND m.is_active = 1"#,
+        [],
+        |r| r.get(0),
+    ).unwrap_or(0.0);
+
+    let low_stock_count: i64 = conn.query_row(
+        r#"SELECT COUNT(*) FROM (
+            SELECT m.id, COALESCE(SUM(b.stock_qty), 0) as tot
+            FROM medicines m
+            LEFT JOIN medicine_batches b ON m.id = b.medicine_id AND b.is_active = 1
+            WHERE m.is_active = 1
+            GROUP BY m.id
+            HAVING tot > 0 AND tot <= ?1
+        )"#,
+        params![threshold],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let out_of_stock_count: i64 = conn.query_row(
+        r#"SELECT COUNT(*) FROM (
+            SELECT m.id, COALESCE(SUM(b.stock_qty), 0) as tot
+            FROM medicines m
+            LEFT JOIN medicine_batches b ON m.id = b.medicine_id AND b.is_active = 1
+            WHERE m.is_active = 1
+            GROUP BY m.id
+            HAVING tot = 0
+        )"#,
+        [],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let expiring_soon_count: i64 = conn.query_row(
+        r#"SELECT COUNT(*) FROM medicine_batches b
+           JOIN medicines m ON b.medicine_id = m.id
+           WHERE b.is_active = 1 AND m.is_active = 1
+             AND b.stock_qty > 0
+             AND b.exp_date >= ?1 AND b.exp_date <= ?2"#,
+        params![today, expiring_threshold_date],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let expired_count: i64 = conn.query_row(
+        r#"SELECT COUNT(*) FROM medicine_batches b
+           JOIN medicines m ON b.medicine_id = m.id
+           WHERE b.is_active = 1 AND m.is_active = 1
+             AND b.stock_qty > 0
+             AND b.exp_date < ?1"#,
+        params![today],
+        |r| r.get(0),
+    ).unwrap_or(0);
+
+    let summary = StockReportSummary {
+        total_active_medicines,
+        total_stock_units,
+        stock_value_cost: (stock_value_cost * 100.0).round() / 100.0,
+        stock_value_mrp: (stock_value_mrp * 100.0).round() / 100.0,
+        low_stock_count,
+        out_of_stock_count,
+        expiring_soon_count,
+        expired_count,
+    };
+
+    // Query items
+    let mut conds = vec!["b.is_active = 1".to_string()];
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+    if !include_archived {
+        conds.push("m.is_active = 1".to_string());
+    }
+
+    if let Some(s) = search {
+        let trimmed = s.trim();
+        if !trimmed.is_empty() {
+            params.push(Box::new(format!("%{}%", trimmed)));
+            let idx = params.len();
+            conds.push(format!(
+                "(m.name LIKE ?{0} OR COALESCE(m.manufacturer, '') LIKE ?{0} OR b.batch_number LIKE ?{0})",
+                idx
+            ));
+        }
+    }
+
+    match sub_view {
+        "LOW_STOCK" => {
+            params.push(Box::new(threshold));
+            let idx = params.len();
+            conds.push(format!(
+                "m_agg.total_stock > 0 AND m_agg.total_stock <= ?{}",
+                idx
+            ));
+        }
+        "OUT_OF_STOCK" => {
+            conds.push("(m_agg.total_stock = 0 OR b.stock_qty = 0)".to_string());
+        }
+        "EXPIRING_SOON" => {
+            params.push(Box::new(today.clone()));
+            let idx1 = params.len();
+            params.push(Box::new(expiring_threshold_date.clone()));
+            let idx2 = params.len();
+            conds.push(format!(
+                "b.exp_date >= ?{} AND b.exp_date <= ?{} AND b.stock_qty > 0",
+                idx1, idx2
+            ));
+        }
+        "EXPIRED" => {
+            params.push(Box::new(today.clone()));
+            let idx1 = params.len();
+            conds.push(format!("b.exp_date < ?{} AND b.stock_qty > 0", idx1));
+        }
+        _ => {}
+    }
+
+    let items_sql = format!(
+        r#"SELECT 
+            b.id,
+            m.name,
+            COALESCE(m.manufacturer, ''),
+            b.batch_number,
+            b.exp_date,
+            b.stock_qty,
+            COALESCE(m.category, 'Units'),
+            b.cost_price,
+            b.mrp,
+            b.selling_price,
+            m.is_active,
+            m_agg.total_stock
+        FROM medicine_batches b
+        JOIN medicines m ON b.medicine_id = m.id
+        JOIN (
+            SELECT 
+                m2.id as med_id,
+                COALESCE(SUM(b2.stock_qty), 0) as total_stock
+            FROM medicines m2
+            LEFT JOIN medicine_batches b2 ON m2.id = b2.medicine_id AND b2.is_active = 1
+            GROUP BY m2.id
+        ) m_agg ON m.id = m_agg.med_id
+        WHERE {}
+        ORDER BY m.name ASC, b.exp_date ASC"#,
+        conds.join(" AND ")
+    );
+
+    let query_params: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
+    let mut stmt = conn.prepare(&items_sql)?;
+    let row_iter = stmt.query_map(&query_params[..], |row| {
+        let is_med_active: i64 = row.get(10)?;
+        let total_stock: i64 = row.get(11)?;
+        let exp: String = row.get(4)?;
+        let qty: i64 = row.get(5)?;
+
+        let stock_status = if total_stock == 0 || qty == 0 {
+            "OUT_OF_STOCK".to_string()
+        } else if total_stock <= threshold {
+            "LOW_STOCK".to_string()
+        } else {
+            "IN_STOCK".to_string()
+        };
+
+        let expiry_status = if exp < today {
+            "EXPIRED".to_string()
+        } else if exp <= expiring_threshold_date {
+            "EXPIRING_SOON".to_string()
+        } else {
+            "SAFE".to_string()
+        };
+
+        Ok(StockReportItem {
+            id: row.get(0)?,
+            medicine_name: row.get(1)?,
+            manufacturer: row.get(2)?,
+            batch_number: row.get(3)?,
+            exp_date: exp,
+            quantity: qty,
+            unit: row.get(6)?,
+            cost_price: ((row.get::<_, f64>(7)? * 100.0).round()) / 100.0,
+            mrp: ((row.get::<_, f64>(8)? * 100.0).round()) / 100.0,
+            selling_price: ((row.get::<_, f64>(9)? * 100.0).round()) / 100.0,
+            stock_status,
+            expiry_status,
+            is_archived: is_med_active == 0,
+        })
+    })?;
+
+    let mut items = Vec::new();
+    for r in row_iter {
+        items.push(r?);
+    }
+
+    Ok(StockReportData { summary, items })
+}
+
+/// Fetches Top Selling medicines report
+pub fn fetch_top_selling_report(
+    conn: &Connection,
+    from_date: Option<&str>,
+    to_date: Option<&str>,
+    sort_by: &str, // "QUANTITY" or "REVENUE"
+    limit: Option<i64>,
+) -> Result<Vec<TopSellingReportItem>> {
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let conds = build_date_conditions(from_date, to_date, &mut params);
+    let where_clause = format!("WHERE {}", conds.join(" AND "));
+
+    let order_expr = if sort_by == "REVENUE" {
+        "revenue DESC, qty_sold DESC"
+    } else {
+        "qty_sold DESC, revenue DESC"
+    };
+
+    let limit_expr = if let Some(l) = limit {
+        if l > 0 {
+            format!("LIMIT {}", l)
+        } else {
+            "".to_string()
+        }
+    } else {
+        "".to_string()
+    };
+
+    let sql = format!(
+        r#"SELECT 
+            bi.medicine_name,
+            COALESCE(m.manufacturer, '') as manufacturer,
+            COALESCE(SUM(bi.quantity), 0) as qty_sold,
+            COUNT(DISTINCT bi.bill_id) as bills_count,
+            COALESCE(SUM(bi.amount), 0.0) as revenue
+        FROM bill_items bi
+        JOIN bills b ON bi.bill_id = b.id
+        LEFT JOIN medicines m ON bi.medicine_id = m.id
+        {}
+        GROUP BY bi.medicine_id, bi.medicine_name
+        ORDER BY {}
+        {}"#,
+        where_clause, order_expr, limit_expr
+    );
+
+    let query_params: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let row_iter = stmt.query_map(&query_params[..], |row| {
+        let rev: f64 = row.get(4)?;
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+            (rev * 100.0).round() / 100.0,
+        ))
+    })?;
+
+    let mut results = Vec::new();
+    let mut rank = 1;
+    for r in row_iter {
+        let (name, mfr, qty, bills_cnt, rev) = r?;
+        results.push(TopSellingReportItem {
+            rank,
+            medicine_name: name,
+            manufacturer: mfr,
+            quantity_sold: qty,
+            bills_count: bills_cnt,
+            revenue: rev,
+        });
+        rank += 1;
+    }
+
+    Ok(results)
+}
+
+/// Fetches Profit report using snapshot cost prices
+pub fn fetch_profit_report(
+    conn: &Connection,
+    from_date: Option<&str>,
+    to_date: Option<&str>,
+    group_by_month: bool,
+) -> Result<ProfitReportData> {
+    let mut params_summary: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let conds_summary = build_date_conditions(from_date, to_date, &mut params_summary);
+    let where_summary = format!("WHERE {}", conds_summary.join(" AND "));
+
+    let summary_sql = format!(
+        r#"SELECT 
+            COALESCE(SUM(bi.amount), 0.0) as total_revenue,
+            COALESCE(SUM(bi.cost_price * bi.quantity), 0.0) as total_cogs
+        FROM bill_items bi
+        JOIN bills b ON bi.bill_id = b.id
+        {}"#,
+        where_summary
+    );
+
+    let query_params_summary: Vec<&dyn rusqlite::ToSql> =
+        params_summary.iter().map(|b| b.as_ref()).collect();
+
+    let mut stmt = conn.prepare(&summary_sql)?;
+    let (revenue, cogs) = stmt.query_row(&query_params_summary[..], |row| {
+        let rev: f64 = row.get(0)?;
+        let c: f64 = row.get(1)?;
+        Ok((
+            (rev * 100.0).round() / 100.0,
+            (c * 100.0).round() / 100.0,
+        ))
+    })?;
+
+    let gross_profit = ((revenue - cogs) * 100.0).round() / 100.0;
+    let margin_percent = if revenue > 0.0 {
+        ((gross_profit / revenue) * 10000.0).round() / 100.0
+    } else {
+        0.0
+    };
+
+    // Discount given from bills in range
+    let mut params_disc: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let conds_disc = build_date_conditions(from_date, to_date, &mut params_disc);
+    let where_disc = format!("WHERE {}", conds_disc.join(" AND "));
+
+    let disc_sql = format!(
+        "SELECT COALESCE(SUM(b.discount), 0.0) FROM bills b {}",
+        where_disc
+    );
+    let query_params_disc: Vec<&dyn rusqlite::ToSql> =
+        params_disc.iter().map(|b| b.as_ref()).collect();
+
+    let mut stmt_disc = conn.prepare(&disc_sql)?;
+    let discount_given: f64 = stmt_disc.query_row(&query_params_disc[..], |row| {
+        let d: f64 = row.get(0)?;
+        Ok((d * 100.0).round() / 100.0)
+    })?;
+
+    let summary = ProfitReportSummary {
+        revenue,
+        cogs,
+        gross_profit,
+        margin_percent,
+        discount_given,
+    };
+
+    // By Date query
+    let mut params_date: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let conds_date = build_date_conditions(from_date, to_date, &mut params_date);
+    let where_date = format!("WHERE {}", conds_date.join(" AND "));
+
+    let period_expr = if group_by_month {
+        "substr(b.bill_date, 1, 7)"
+    } else {
+        "substr(b.bill_date, 1, 10)"
+    };
+
+    let by_date_sql = format!(
+        r#"SELECT 
+            {} as period,
+            COALESCE(SUM(bi.quantity), 0) as qty_sold,
+            COALESCE(SUM(bi.amount), 0.0) as revenue,
+            COALESCE(SUM(bi.cost_price * bi.quantity), 0.0) as cogs
+        FROM bill_items bi
+        JOIN bills b ON bi.bill_id = b.id
+        {}
+        GROUP BY period
+        ORDER BY period DESC"#,
+        period_expr, where_date
+    );
+
+    let query_params_date: Vec<&dyn rusqlite::ToSql> =
+        params_date.iter().map(|b| b.as_ref()).collect();
+
+    let mut stmt_date = conn.prepare(&by_date_sql)?;
+    let date_iter = stmt_date.query_map(&query_params_date[..], |row| {
+        let rev: f64 = row.get(2)?;
+        let c: f64 = row.get(3)?;
+        let p = (rev - c * 100.0).round() / 100.0;
+        let profit = ((rev - c) * 100.0).round() / 100.0;
+        let margin = if rev > 0.0 {
+            ((profit / rev) * 10000.0).round() / 100.0
+        } else {
+            0.0
+        };
+
+        Ok(ProfitReportByDateRow {
+            period: row.get(0)?,
+            quantity_sold: row.get(1)?,
+            revenue: (rev * 100.0).round() / 100.0,
+            cogs: (c * 100.0).round() / 100.0,
+            gross_profit: profit,
+            margin_percent: margin,
+        })
+    })?;
+
+    let mut by_date = Vec::new();
+    for r in date_iter {
+        by_date.push(r?);
+    }
+
+    // By Medicine query
+    let mut params_med: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let conds_med = build_date_conditions(from_date, to_date, &mut params_med);
+    let where_med = format!("WHERE {}", conds_med.join(" AND "));
+
+    let by_med_sql = format!(
+        r#"SELECT 
+            bi.medicine_name,
+            COALESCE(m.manufacturer, '') as manufacturer,
+            COALESCE(SUM(bi.quantity), 0) as qty_sold,
+            COALESCE(SUM(bi.amount), 0.0) as revenue,
+            COALESCE(SUM(bi.cost_price * bi.quantity), 0.0) as cogs
+        FROM bill_items bi
+        JOIN bills b ON bi.bill_id = b.id
+        LEFT JOIN medicines m ON bi.medicine_id = m.id
+        {}
+        GROUP BY bi.medicine_id, bi.medicine_name
+        ORDER BY (COALESCE(SUM(bi.amount), 0.0) - COALESCE(SUM(bi.cost_price * bi.quantity), 0.0)) DESC"#,
+        where_med
+    );
+
+    let query_params_med: Vec<&dyn rusqlite::ToSql> =
+        params_med.iter().map(|b| b.as_ref()).collect();
+
+    let mut stmt_med = conn.prepare(&by_med_sql)?;
+    let med_iter = stmt_med.query_map(&query_params_med[..], |row| {
+        let rev: f64 = row.get(3)?;
+        let c: f64 = row.get(4)?;
+        let profit = ((rev - c) * 100.0).round() / 100.0;
+        let margin = if rev > 0.0 {
+            ((profit / rev) * 10000.0).round() / 100.0
+        } else {
+            0.0
+        };
+
+        Ok(ProfitReportByMedicineRow {
+            medicine_name: row.get(0)?,
+            manufacturer: row.get(1)?,
+            quantity_sold: row.get(2)?,
+            revenue: (rev * 100.0).round() / 100.0,
+            cogs: (c * 100.0).round() / 100.0,
+            gross_profit: profit,
+            margin_percent: margin,
+        })
+    })?;
+
+    let mut by_medicine = Vec::new();
+    for r in med_iter {
+        by_medicine.push(r?);
+    }
+
+    Ok(ProfitReportData {
+        summary,
+        by_date,
+        by_medicine,
+    })
+}
+
+/// Fetches GST Summary report using standard 18% (9/9) inclusive calculation
+pub fn fetch_gst_summary_report(
+    conn: &Connection,
+    from_date: Option<&str>,
+    to_date: Option<&str>,
+) -> Result<GstSummaryReportData> {
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    let conds = build_date_conditions(from_date, to_date, &mut params);
+    let where_clause = format!("WHERE {}", conds.join(" AND "));
+
+    let sql = format!(
+        r#"SELECT 
+            substr(b.bill_date, 1, 10) as day_date,
+            COUNT(b.id) as bills_count,
+            COALESCE(SUM(b.grand_total), 0.0) as billed_amount
+        FROM bills b
+        {}
+        GROUP BY day_date
+        ORDER BY day_date DESC"#,
+        where_clause
+    );
+
+    let query_params: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
+    let mut stmt = conn.prepare(&sql)?;
+    let row_iter = stmt.query_map(&query_params[..], |row| {
+        let d: String = row.get(0)?;
+        let count: i64 = row.get(1)?;
+        let billed: f64 = row.get(2)?;
+
+        let billed_rounded = (billed * 100.0).round() / 100.0;
+        let total_gst = ((billed_rounded * 18.0 / 118.0) * 100.0).round() / 100.0;
+        let cgst = ((total_gst / 2.0) * 100.0).round() / 100.0;
+        let sgst = ((total_gst - cgst) * 100.0).round() / 100.0;
+        let taxable = ((billed_rounded - total_gst) * 100.0).round() / 100.0;
+
+        Ok(GstSummaryRow {
+            date: d,
+            bills_count: count,
+            billed_amount: billed_rounded,
+            taxable_value: taxable,
+            cgst,
+            sgst,
+            total_gst,
+        })
+    })?;
+
+    let mut rows = Vec::new();
+    let mut tot_billed = 0.0;
+    let mut tot_taxable = 0.0;
+    let mut tot_cgst = 0.0;
+    let mut tot_sgst = 0.0;
+    let mut tot_gst = 0.0;
+    let mut tot_bills = 0;
+
+    for r in row_iter {
+        let row = r?;
+        tot_billed += row.billed_amount;
+        tot_taxable += row.taxable_value;
+        tot_cgst += row.cgst;
+        tot_sgst += row.sgst;
+        tot_gst += row.total_gst;
+        tot_bills += row.bills_count;
+        rows.push(row);
+    }
+
+    let summary = GstSummaryReportSummary {
+        total_billed_amount: (tot_billed * 100.0).round() / 100.0,
+        total_taxable_value: (tot_taxable * 100.0).round() / 100.0,
+        total_cgst: (tot_cgst * 100.0).round() / 100.0,
+        total_sgst: (tot_sgst * 100.0).round() / 100.0,
+        total_gst: (tot_gst * 100.0).round() / 100.0,
+        bills_count: tot_bills,
+    };
+
+    Ok(GstSummaryReportData { summary, rows })
+}
+
 
 
 

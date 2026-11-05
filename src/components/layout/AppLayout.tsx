@@ -50,7 +50,7 @@ const NAV_ITEMS: NavItemConfig[] = [
   { key: "bill_history", label: "Bill History", icon: History, isImplemented: true },
   { key: "medicines", label: "Medicines", icon: Pill, isImplemented: true },
   { key: "customers", label: "Customers", icon: Users, isImplemented: true },
-  { key: "reports", label: "Reports", icon: BarChart3, isImplemented: false, phaseText: "Phase 5" },
+  { key: "reports", label: "Reports", icon: BarChart3, isImplemented: true },
   { key: "store_details", label: "Store Details", icon: Store, isImplemented: true },
   { key: "backup_restore", label: "Backup & Restore", icon: DatabaseBackup, isImplemented: true },
 ];
